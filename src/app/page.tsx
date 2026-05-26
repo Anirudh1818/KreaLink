@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
-
-
 
 const features = [
   {
@@ -32,19 +32,29 @@ const features = [
   },
 ];
 
-const creators = [
+type HomeCreator = {
+  name: string;
+  username: string;
+  category: string;
+  supporters: string;
+};
+
+const fallbackCreators: HomeCreator[] = [
   {
     name: "Samay Raina",
+    username: "samay",
     category: "Comedy Creator",
     supporters: "21.2K",
   },
   {
     name: "Maya Fit",
+    username: "mayafit",
     category: "Fitness Creator",
     supporters: "6.8K",
   },
   {
     name: "Aarav Live",
+    username: "aaravlive",
     category: "Streamer",
     supporters: "12.4K",
   },
@@ -58,20 +68,96 @@ const leaderboard = [
 
 export default function Home() {
   const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const [creators, setCreators] = useState<HomeCreator[]>(fallbackCreators);
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
+  const [waitlistMessage, setWaitlistMessage] = useState("");
+
   const theme = themes[activeTheme];
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("fanstreak-theme");
 
-if (isThemeKey(savedTheme)) {
-  setActiveTheme(savedTheme);
-}
+    if (isThemeKey(savedTheme)) {
+      setActiveTheme(savedTheme);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function loadCreatorsFromFirestore() {
+      const snapshot = await getDocs(collection(db, "creators"));
+
+      if (snapshot.empty) {
+        setCreators(fallbackCreators);
+        return;
+      }
+
+      const firestoreCreators: HomeCreator[] = snapshot.docs.map((creatorDoc) => {
+        const data = creatorDoc.data();
+
+        return {
+          name: String(data.name || "Creator"),
+          username: String(data.username || creatorDoc.id),
+          category: String(data.category || "Creator"),
+          supporters: String(data.supporters || "0"),
+        };
+      });
+
+      const firestoreUsernames = new Set(
+        firestoreCreators.map((creator) => creator.username.toLowerCase())
+      );
+
+      const fallbackWithoutDuplicates = fallbackCreators.filter(
+        (creator) => !firestoreUsernames.has(creator.username.toLowerCase())
+      );
+
+      setCreators([...firestoreCreators, ...fallbackWithoutDuplicates]);
+    }
+
+    loadCreatorsFromFirestore().catch((error) => {
+      console.error("Failed to load creators on home page:", error);
+      setCreators(fallbackCreators);
+    });
   }, []);
 
   function changeTheme(themeKey: ThemeKey) {
     setActiveTheme(themeKey);
     localStorage.setItem("fanstreak-theme", themeKey);
   }
+
+  async function joinEarlyAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const cleanEmail = waitlistEmail.trim().toLowerCase();
+
+    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      setWaitlistMessage("Please enter a valid email.");
+      return;
+    }
+
+    try {
+      setIsJoiningWaitlist(true);
+      setWaitlistMessage("");
+
+      await addDoc(collection(db, "earlyAccess"), {
+        email: cleanEmail,
+        source: "home_page",
+        createdAt: serverTimestamp(),
+      });
+
+      setWaitlistEmail("");
+      setWaitlistMessage("You are on the early access list.");
+    } catch (error) {
+      console.error("Failed to join early access:", error);
+      setWaitlistMessage("Something went wrong. Please try again.");
+    } finally {
+      setIsJoiningWaitlist(false);
+    }
+  }
+
+  const featuredCreator = creators[0] || fallbackCreators[0];
+  const featuredInitial =
+    featuredCreator.name.trim().charAt(0).toUpperCase() || "C";
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
@@ -122,13 +208,13 @@ if (isThemeKey(savedTheme)) {
             <a className="transition hover:text-white" href="#features">
               Features
             </a>
-            <a className="transition hover:text-white" href="/creator-studio">
-              Creator Studio
+            <a className="transition hover:text-white" href="#how">
+              How it works
             </a>
           </div>
 
           <a
-            href="/creator-studio"
+            href="#early-access"
             className="rounded-2xl px-5 py-3 text-sm font-bold text-white transition hover:scale-[1.02]"
             style={{
               background: theme.gradient,
@@ -187,10 +273,10 @@ if (isThemeKey(savedTheme)) {
               Explore creators →
             </a>
             <a
-              href="/creator-studio"
+              href="#early-access"
               className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
             >
-              Join as creator
+              Get early access
             </a>
           </div>
 
@@ -273,7 +359,6 @@ if (isThemeKey(savedTheme)) {
             <div
               key={feature.title}
               className="group rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 shadow-2xl transition hover:bg-white/[0.055]"
-              style={{ boxShadow: `0 0 45px rgba(0,0,0,0.18)` }}
             >
               <div
                 className="mb-10 flex h-14 w-14 items-center justify-center rounded-2xl text-3xl"
@@ -307,8 +392,8 @@ if (isThemeKey(savedTheme)) {
           <div className="mt-8 grid gap-4">
             {creators.map((creator) => (
               <a
-                key={creator.name}
-                href="/samay"
+                key={creator.username}
+                href={`/${creator.username}`}
                 className="flex items-center justify-between rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5 transition hover:bg-white/[0.06]"
               >
                 <div className="flex items-center gap-4">
@@ -345,17 +430,19 @@ if (isThemeKey(savedTheme)) {
                 style={{ background: theme.gradient }}
               >
                 <div className="flex h-full w-full items-center justify-center rounded-[1.35rem] bg-[#111116] text-3xl font-black">
-                  S
+                  {featuredInitial}
                 </div>
               </div>
               <div>
-                <h3 className="text-2xl font-black">Samay Raina</h3>
-                <p className="text-white/45">fanstreak.in/samay</p>
+                <h3 className="text-2xl font-black">{featuredCreator.name}</h3>
+                <p className="text-white/45">
+                  fanstreak.in/{featuredCreator.username}
+                </p>
               </div>
             </div>
 
             <a
-              href="/samay"
+              href={`/${featuredCreator.username}`}
               className="mt-7 block w-full rounded-2xl py-4 text-center font-black"
               style={{
                 background: theme.gradient,
@@ -371,7 +458,7 @@ if (isThemeKey(savedTheme)) {
                   className="bg-clip-text text-2xl font-black text-transparent"
                   style={{ backgroundImage: theme.text }}
                 >
-                  21.2K
+                  {featuredCreator.supporters}
                 </p>
                 <p className="text-sm text-white/45">Supporters</p>
               </div>
@@ -429,8 +516,7 @@ if (isThemeKey(savedTheme)) {
             </h2>
             <p className="mt-5 text-lg leading-8 text-white/55">
               Every user can switch between premium FanStreak themes. The chosen
-              look follows them across the home page, creator page, and creator
-              studio.
+              look follows them across the home page and creator page.
             </p>
           </div>
 
@@ -516,6 +602,67 @@ if (isThemeKey(savedTheme)) {
         </div>
       </section>
 
+      <section
+        id="early-access"
+        className="relative z-10 mx-auto max-w-5xl px-5 py-20 text-center md:px-8"
+      >
+        <div
+          className="rounded-[2.5rem] border border-white/10 bg-white/[0.035] p-6 md:p-10"
+          style={{ boxShadow: `0 0 80px ${theme.glow}` }}
+        >
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-white/40">
+            Early access
+          </p>
+
+          <h2 className="mt-4 text-4xl font-black tracking-tight md:text-6xl">
+            Get early access
+            <br />
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: theme.text }}
+            >
+              before public launch.
+            </span>
+          </h2>
+
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
+            Join the waitlist for launch updates, creator drops, and early
+            access when FanStreak opens publicly.
+          </p>
+
+          <form
+            onSubmit={joinEarlyAccess}
+            className="mx-auto mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row"
+          >
+            <input
+              value={waitlistEmail}
+              onChange={(event) => setWaitlistEmail(event.target.value)}
+              type="email"
+              placeholder="you@email.com"
+              className="min-h-14 flex-1 rounded-2xl border border-white/10 bg-black/30 px-5 font-bold text-white outline-none placeholder:text-white/30 focus:border-white/25"
+            />
+
+            <button
+              type="submit"
+              disabled={isJoiningWaitlist}
+              className="min-h-14 rounded-2xl px-7 font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 35px ${theme.glow}`,
+              }}
+            >
+              {isJoiningWaitlist ? "Joining..." : "Join waitlist"}
+            </button>
+          </form>
+
+          {waitlistMessage && (
+            <p className="mt-4 text-sm font-bold text-white/55">
+              {waitlistMessage}
+            </p>
+          )}
+        </div>
+      </section>
+
       <footer className="relative z-10 border-t border-white/10 px-5 py-10 md:px-8">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 md:flex-row md:items-center">
           <div>
@@ -534,7 +681,7 @@ if (isThemeKey(savedTheme)) {
             <a href="#features">About</a>
             <a href="#creators">Creators</a>
             <a href="#worlds">Themes</a>
-            <a href="/creator-studio">Studio</a>
+            <a href="#early-access">Early Access</a>
           </div>
         </div>
       </footer>

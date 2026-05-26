@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { collection, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
 
@@ -150,20 +152,63 @@ if (isThemeKey(savedTheme)) {
 }
   }, []);
 
+  useEffect(() => {
+  async function loadCreatorsFromFirestore() {
+    const snapshot = await getDocs(collection(db, "creators"));
+
+    if (snapshot.empty) {
+      return;
+    }
+
+    const firestoreCreators: Creator[] = snapshot.docs.map((creatorDoc) => {
+      const data = creatorDoc.data();
+
+      return {
+        name: String(data.name || ""),
+        username: String(data.username || creatorDoc.id),
+        category: String(data.category || "Creator"),
+        supporters: String(data.supporters || "0"),
+        volume: String(data.volume || "₹0"),
+        status: String(data.status || "Pending") as CreatorStatus,
+      };
+    });
+
+    setCreators(firestoreCreators);
+  }
+
+  loadCreatorsFromFirestore().catch((error) => {
+    console.error("Failed to load creators from Firestore:", error);
+  });
+}, []);
+
   function changeTheme(themeKey: ThemeKey) {
     setActiveTheme(themeKey);
     localStorage.setItem("fanstreak-theme", themeKey);
   }
 
-  function approveCreator(name: string) {
-    setCreators((currentCreators) =>
-      currentCreators.map((creator) =>
-        creator.name === name ? { ...creator, status: "Live" } : creator
-      )
-    );
+  async function approveCreator(name: string) {
+  const matchedCreator = creators.find((creator) => creator.name === name);
 
-    alert(`${name} approved and marked live for demo.`);
+  setCreators((currentCreators) =>
+    currentCreators.map((creator) =>
+      creator.name === name ? { ...creator, status: "Live" } : creator
+    )
+  );
+
+  if (matchedCreator) {
+    await setDoc(
+      doc(db, "creators", matchedCreator.username),
+      {
+        ...matchedCreator,
+        status: "Live",
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
+
+  alert(`${name} approved and saved as Live in Firestore.`);
+}
 
   function markPayoutPaid(id: string, creator: string) {
     setPaidPayouts((current) =>
@@ -173,7 +218,7 @@ if (isThemeKey(savedTheme)) {
     alert(`${creator} payout marked as paid for demo.`);
   }
 
-  function addCreator(event: FormEvent<HTMLFormElement>) {
+  async function addCreator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const cleanName = creatorName.trim();
@@ -206,13 +251,21 @@ if (isThemeKey(savedTheme)) {
       status: "Pending",
     };
 
-    setCreators((currentCreators) => [newCreator, ...currentCreators]);
-    setCreatorName("");
-    setCreatorUsername("");
-    setCreatorCategory("");
-    setIsAddCreatorOpen(false);
+   await setDoc(doc(db, "creators", cleanUsername), {
+  ...newCreator,
+  theme: activeTheme,
+  bio: `${cleanName} · ${cleanCategory} · fan recognition`,
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
 
-    alert(`Creator profile created: fanstreak.in/${cleanUsername}`);
+setCreators((currentCreators) => [newCreator, ...currentCreators]);
+setCreatorName("");
+setCreatorUsername("");
+setCreatorCategory("");
+setIsAddCreatorOpen(false);
+
+alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
   }
 
   function exportTransactions() {

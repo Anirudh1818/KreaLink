@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
-
-
 
 const supportAmounts = ["₹21", "₹51", "₹101", "₹251", "₹501"];
 
@@ -16,14 +17,38 @@ const leaderboard = [
 
 const badges = ["Early Supporter", "7-Day Streak", "Top Fan", "Diamond Fan"];
 
-const heroStats = [
-  { value: "21.2K", label: "Supporters" },
-  { value: "103d", label: "Record streak" },
-  { value: "Top 5", label: "Reward zone" },
-  { value: "4", label: "Elite badges" },
-];
+type CreatorProfile = {
+  name: string;
+  username: string;
+  category: string;
+  bio: string;
+  status: string;
+  supporters: string;
+  volume: string;
+};
+
+const fallbackCreator: CreatorProfile = {
+  name: "Samay Raina",
+  username: "samay",
+  category: "Comedy Creator",
+  bio: "Comedy creator · creator community · fan recognition",
+  status: "Live",
+  supporters: "21.2K",
+  volume: "₹8.72L",
+};
 
 export default function CreatorPage() {
+  const params = useParams();
+  const rawCreator = params?.creator;
+  const creatorUsername = Array.isArray(rawCreator)
+    ? rawCreator[0].toLowerCase()
+    : String(rawCreator || "samay").toLowerCase();
+
+  const [creatorProfile, setCreatorProfile] =
+    useState<CreatorProfile>(fallbackCreator);
+  const [isLoadingCreator, setIsLoadingCreator] = useState(true);
+  const [creatorNotFound, setCreatorNotFound] = useState(false);
+
   const [selectedAmount, setSelectedAmount] = useState("₹101");
   const [customAmount, setCustomAmount] = useState("");
   const [isCustom, setIsCustom] = useState(false);
@@ -37,10 +62,56 @@ export default function CreatorPage() {
   useEffect(() => {
     const savedTheme = localStorage.getItem("fanstreak-theme");
 
-if (isThemeKey(savedTheme)) {
-  setActiveTheme(savedTheme);
-}
+    if (isThemeKey(savedTheme)) {
+      setActiveTheme(savedTheme);
+    }
   }, []);
+
+  useEffect(() => {
+    async function loadCreatorProfile() {
+      try {
+        setIsLoadingCreator(true);
+        setCreatorNotFound(false);
+
+        const creatorRef = doc(db, "creators", creatorUsername);
+        const creatorSnapshot = await getDoc(creatorRef);
+
+        if (!creatorSnapshot.exists()) {
+          if (creatorUsername === "samay") {
+            setCreatorProfile(fallbackCreator);
+            return;
+          }
+
+          setCreatorNotFound(true);
+          return;
+        }
+
+        const data = creatorSnapshot.data();
+
+        setCreatorProfile({
+          name: String(data.name || "Creator"),
+          username: String(data.username || creatorSnapshot.id),
+          category: String(data.category || "Creator"),
+          bio: String(
+            data.bio ||
+              `${String(data.name || "Creator")} · ${String(
+                data.category || "Creator"
+              )} · fan recognition`
+          ),
+          status: String(data.status || "Pending"),
+          supporters: String(data.supporters || "0"),
+          volume: String(data.volume || "₹0"),
+        });
+      } catch (error) {
+        console.error("Failed to load creator profile:", error);
+        setCreatorNotFound(true);
+      } finally {
+        setIsLoadingCreator(false);
+      }
+    }
+
+    loadCreatorProfile();
+  }, [creatorUsername]);
 
   function changeTheme(themeKey: ThemeKey) {
     setActiveTheme(themeKey);
@@ -56,6 +127,75 @@ if (isThemeKey(savedTheme)) {
   function openSupportModal() {
     if (!canContinue) return;
     setIsModalOpen(true);
+  }
+
+  const creatorInitial =
+    creatorProfile.name.trim().charAt(0).toUpperCase() || "C";
+
+  const nameParts = creatorProfile.name.trim().split(/\s+/).filter(Boolean);
+  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+  const firstName =
+    nameParts.length > 1
+      ? nameParts.slice(0, -1).join(" ")
+      : creatorProfile.name;
+
+  const creatorHeroStats = [
+    { value: creatorProfile.supporters, label: "Supporters" },
+    { value: "103d", label: "Record streak" },
+    { value: "Top 5", label: "Reward zone" },
+    { value: "4", label: "Elite badges" },
+  ];
+
+  if (isLoadingCreator) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
+        <div className="text-center">
+          <div
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl"
+            style={{
+              background: theme.gradient,
+              boxShadow: `0 0 60px ${theme.glow}`,
+            }}
+          >
+            🔥
+          </div>
+          <h1 className="mt-6 text-3xl font-black">Loading creator world...</h1>
+          <p className="mt-2 text-white/45">Preparing FanStreak profile</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (creatorNotFound) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
+        <div className="max-w-xl text-center">
+          <div
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl"
+            style={{
+              background: theme.gradient,
+              boxShadow: `0 0 60px ${theme.glow}`,
+            }}
+          >
+            🔥
+          </div>
+          <h1 className="mt-6 text-4xl font-black">Creator not found</h1>
+          <p className="mt-3 text-white/50">
+            This FanStreak creator world is not live yet.
+          </p>
+          <a
+            href="/"
+            className="mt-8 inline-block rounded-2xl px-6 py-4 font-black text-white"
+            style={{
+              background: theme.gradient,
+              boxShadow: `0 0 40px ${theme.glow}`,
+            }}
+          >
+            Back to FanStreak
+          </a>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -92,7 +232,7 @@ if (isThemeKey(savedTheme)) {
                 FanStreak
               </h1>
               <p className="hidden text-xs text-white/45 sm:block">
-                fanstreak.in/samay
+                fanstreak.in/{creatorProfile.username}
               </p>
             </div>
           </a>
@@ -137,7 +277,10 @@ if (isThemeKey(savedTheme)) {
             <div className="relative grid gap-8 md:grid-cols-[1fr_420px] md:items-center">
               <div>
                 <div className="mb-6 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70 backdrop-blur-xl">
-                  Verified Creator World · {theme.name}
+                  {creatorProfile.status === "Live"
+                    ? "Verified Creator World"
+                    : "Creator World Preview"}{" "}
+                  · {theme.name}
                 </div>
 
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -149,23 +292,23 @@ if (isThemeKey(savedTheme)) {
                     }}
                   >
                     <div className="flex h-full w-full items-center justify-center rounded-[1.8rem] bg-[#101015] text-5xl font-black">
-                      S
+                      {creatorInitial}
                     </div>
                   </div>
 
                   <div>
                     <h2 className="text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">
-                      Samay
+                      {firstName}
                       <br />
                       <span
                         className="bg-clip-text text-transparent"
                         style={{ backgroundImage: theme.text }}
                       >
-                        Raina
+                        {lastName || creatorProfile.category}
                       </span>
                     </h2>
                     <p className="mt-4 text-base font-medium text-white/50 md:text-lg">
-                      Comedy creator · creator community · fan recognition
+                      {creatorProfile.bio}
                     </p>
                   </div>
                 </div>
@@ -177,7 +320,7 @@ if (isThemeKey(savedTheme)) {
                 </p>
 
                 <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {heroStats.map((item) => (
+                  {creatorHeroStats.map((item) => (
                     <div
                       key={item.label}
                       className="rounded-2xl border border-white/10 bg-black/25 p-4 backdrop-blur-xl"
@@ -262,7 +405,9 @@ if (isThemeKey(savedTheme)) {
                         }`}
                         style={{
                           borderColor: active ? item.border : undefined,
-                          boxShadow: active ? `0 0 25px ${item.glow}` : undefined,
+                          boxShadow: active
+                            ? `0 0 25px ${item.glow}`
+                            : undefined,
                         }}
                       >
                         <span
@@ -494,12 +639,12 @@ if (isThemeKey(savedTheme)) {
                   style={{ background: theme.gradient }}
                 >
                   <div className="flex h-full w-full items-center justify-center rounded-[0.9rem] bg-[#101015] text-2xl font-black">
-                    S
+                    {creatorInitial}
                   </div>
                 </div>
                 <div>
                   <p className="text-sm text-white/45">Supporting</p>
-                  <p className="text-xl font-black">Samay Raina</p>
+                  <p className="text-xl font-black">{creatorProfile.name}</p>
                 </div>
               </div>
 
@@ -514,18 +659,18 @@ if (isThemeKey(savedTheme)) {
               </div>
             </div>
 
-         <button
-  onClick={() => {
-    window.location.href = "/success";
-  }}
-  className="mt-5 w-full rounded-2xl py-4 font-black text-white"
-  style={{
-    background: theme.gradient,
-    boxShadow: `0 0 45px ${theme.glow}`,
-  }}
->
-  Proceed to payment
-</button>
+            <button
+              onClick={() => {
+                window.location.href = "/success";
+              }}
+              className="mt-5 w-full rounded-2xl py-4 font-black text-white"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 45px ${theme.glow}`,
+              }}
+            >
+              Proceed to payment
+            </button>
 
             <p className="mt-4 text-center text-sm text-white/35">
               Payment integration will connect here after MVP UI approval.
