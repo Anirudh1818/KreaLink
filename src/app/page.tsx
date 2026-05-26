@@ -272,12 +272,12 @@ export default function Home() {
             >
               Explore creators →
             </a>
-            <a
-              href="#early-access"
-              className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
-            >
-              Get early access
-            </a>
+        <a
+  href="/join-creator"
+  className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
+>
+  Join as Creator
+</a>
           </div>
 
           <div className="mt-8 flex flex-wrap justify-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-white/40">

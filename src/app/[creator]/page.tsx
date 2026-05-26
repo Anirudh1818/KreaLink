@@ -6,14 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
-const supportAmounts = ["₹21", "₹51", "₹101", "₹251", "₹501"];
-
-const leaderboard = [
-  { rank: "01", name: "Rohan", badge: "Diamond Fan", streak: "30 days" },
-  { rank: "02", name: "Ishita", badge: "Top Fan", streak: "27 days" },
-  { rank: "03", name: "Dev", badge: "Loyal Fan", streak: "21 days" },
-  { rank: "04", name: "Arjun", badge: "Rising Fan", streak: "14 days" },
-];
+const supportAmounts = ["₹9", "₹19", "₹49", "₹599", "₹999"];
 
 const badges = ["Early Supporter", "7-Day Streak", "Top Fan", "Diamond Fan"];
 
@@ -25,31 +18,116 @@ type CreatorProfile = {
   status: string;
   supporters: string;
   volume: string;
+  profilePhoto: string;
+  verified: boolean;
+  socialLinks: {
+    instagram?: string;
+    youtube?: string;
+    x?: string;
+    website?: string;
+  };
+};
+
+type LeaderboardFan = {
+  rank: "01" | "02" | "03" | "04";
+  name: string;
+  badge: string;
+  metric: string;
 };
 
 const fallbackCreator: CreatorProfile = {
-  name: "Samay Raina",
-  username: "samay",
-  category: "Comedy Creator",
-  bio: "Comedy creator · creator community · fan recognition",
-  status: "Live",
-  supporters: "21.2K",
-  volume: "₹8.72L",
+  name: "Creator",
+  username: "creator",
+  category: "Creator",
+  bio: "This creator profile is not live yet.",
+  status: "Pending",
+  supporters: "0",
+  volume: "₹0",
+  profilePhoto: "",
+  verified: false,
+  socialLinks: {},
 };
+
+const leaderboardSets: {
+  title: string;
+  subtitle: string;
+  reward: string;
+  fans: LeaderboardFan[];
+}[] = [
+  {
+    title: "🔥 Highest Streak",
+    subtitle:
+      "The fans who show up again and again. Every day they continue, their name becomes harder to ignore.",
+    reward:
+      "Longest streak fan gets OG Fan Badge + monthly creator recognition.",
+    fans: [
+      { rank: "01", name: "Rohan", badge: "Streak King", metric: "103 days" },
+      { rank: "02", name: "Ishita", badge: "Daily Fan", metric: "87 days" },
+      { rank: "03", name: "Dev", badge: "Consistent Fan", metric: "61 days" },
+      { rank: "04", name: "Arjun", badge: "Rising Streak", metric: "42 days" },
+    ],
+  },
+  {
+    title: "💎 Most Loyal Fans",
+    subtitle:
+      "Not just one-time supporters — these are the fans who stay, engage, return, and build real fan identity.",
+    reward:
+      "Most loyal fans get priority recognition and special identity badges.",
+    fans: [
+      {
+        rank: "01",
+        name: "Ishita",
+        badge: "Diamond Loyalist",
+        metric: "98 score",
+      },
+      { rank: "02", name: "Rohan", badge: "Core Fan", metric: "94 score" },
+      { rank: "03", name: "Meera", badge: "True Fan", metric: "89 score" },
+      { rank: "04", name: "Kabir", badge: "Active Fan", metric: "81 score" },
+    ],
+  },
+  {
+    title: "👑 Highest Paid",
+    subtitle:
+      "The strongest supporters compete for premium visibility, VIP status, and the biggest reward slots.",
+    reward:
+      "Highest paid supporters unlock VIP recognition and premium reward slots.",
+    fans: [
+      { rank: "01", name: "Dev", badge: "VIP Supporter", metric: "₹12,501" },
+      { rank: "02", name: "Rohan", badge: "Top Patron", metric: "₹9,251" },
+      { rank: "03", name: "Ishita", badge: "Elite Fan", metric: "₹7,101" },
+      { rank: "04", name: "Arjun", badge: "Power Fan", metric: "₹5,501" },
+    ],
+  },
+];
+
+function normalizeUrl(value?: string) {
+  const cleanValue = String(value || "").trim();
+
+  if (!cleanValue) {
+    return "";
+  }
+
+  if (cleanValue.startsWith("http://") || cleanValue.startsWith("https://")) {
+    return cleanValue;
+  }
+
+  return `https://${cleanValue}`;
+}
 
 export default function CreatorPage() {
   const params = useParams();
-  const rawCreator = params?.creator;
+  const rawCreator = params?.creator as string | string[] | undefined;
+
   const creatorUsername = Array.isArray(rawCreator)
     ? rawCreator[0].toLowerCase()
-    : String(rawCreator || "samay").toLowerCase();
+    : String(rawCreator || "creator").toLowerCase();
 
   const [creatorProfile, setCreatorProfile] =
     useState<CreatorProfile>(fallbackCreator);
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
 
-  const [selectedAmount, setSelectedAmount] = useState("₹101");
+  const [selectedAmount, setSelectedAmount] = useState("₹49");
   const [customAmount, setCustomAmount] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -77,11 +155,6 @@ export default function CreatorPage() {
         const creatorSnapshot = await getDoc(creatorRef);
 
         if (!creatorSnapshot.exists()) {
-          if (creatorUsername === "samay") {
-            setCreatorProfile(fallbackCreator);
-            return;
-          }
-
           setCreatorNotFound(true);
           return;
         }
@@ -101,7 +174,20 @@ export default function CreatorPage() {
           status: String(data.status || "Pending"),
           supporters: String(data.supporters || "0"),
           volume: String(data.volume || "₹0"),
+          profilePhoto: String(data.profilePhoto || ""),
+          verified: Boolean(data.verified || false),
+          socialLinks: {
+            instagram: String(data.socialLinks?.instagram || ""),
+            youtube: String(data.socialLinks?.youtube || ""),
+            x: String(data.socialLinks?.x || ""),
+            website: String(data.socialLinks?.website || ""),
+          },
         });
+
+        if (isThemeKey(String(data.theme || ""))) {
+          setActiveTheme(data.theme as ThemeKey);
+          localStorage.setItem("fanstreak-theme", data.theme as ThemeKey);
+        }
       } catch (error) {
         console.error("Failed to load creator profile:", error);
         setCreatorNotFound(true);
@@ -138,6 +224,13 @@ export default function CreatorPage() {
     nameParts.length > 1
       ? nameParts.slice(0, -1).join(" ")
       : creatorProfile.name;
+
+  const availableSocialLinks = [
+    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
+    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
+    { label: "X", value: creatorProfile.socialLinks.x },
+    { label: "Website", value: creatorProfile.socialLinks.website },
+  ].filter((item) => item.value && item.value.trim().length > 0);
 
   const creatorHeroStats = [
     { value: creatorProfile.supporters, label: "Supporters" },
@@ -285,31 +378,64 @@ export default function CreatorPage() {
 
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                   <div
-                    className="h-28 w-28 rounded-[2rem] p-[3px]"
+                    className="h-32 w-32 shrink-0 rounded-full p-[3px]"
                     style={{
                       background: theme.gradient,
                       boxShadow: `0 0 55px ${theme.glow}`,
                     }}
                   >
-                    <div className="flex h-full w-full items-center justify-center rounded-[1.8rem] bg-[#101015] text-5xl font-black">
-                      {creatorInitial}
+                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#101015] text-5xl font-black">
+                      {creatorProfile.profilePhoto ? (
+                        <img
+                          src={creatorProfile.profilePhoto}
+                          alt={creatorProfile.name}
+                          className="h-full w-full rounded-full object-contain object-center"
+                        />
+                      ) : (
+                        creatorInitial
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <h2 className="text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">
-                      {firstName}
-                      <br />
-                      <span
-                        className="bg-clip-text text-transparent"
-                        style={{ backgroundImage: theme.text }}
-                      >
-                        {lastName || creatorProfile.category}
-                      </span>
-                    </h2>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">
+                        {firstName}
+                        <br />
+                        <span
+                          className="bg-clip-text text-transparent"
+                          style={{ backgroundImage: theme.text }}
+                        >
+                          {lastName || creatorProfile.category}
+                        </span>
+                      </h2>
+
+                      {creatorProfile.verified && (
+                        <span className="rounded-full bg-blue-500 px-3 py-1 text-xs font-black">
+                          ✓ Verified
+                        </span>
+                      )}
+                    </div>
+
                     <p className="mt-4 text-base font-medium text-white/50 md:text-lg">
                       {creatorProfile.bio}
                     </p>
+
+                    {availableSocialLinks.length > 0 && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {availableSocialLinks.map((link) => (
+                          <a
+                            key={link.label}
+                            href={normalizeUrl(link.value)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/65 transition hover:bg-white/[0.1]"
+                          >
+                            {link.label}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -331,7 +457,9 @@ export default function CreatorPage() {
                       >
                         {item.value}
                       </p>
-                      <p className="mt-1 text-sm text-white/45">{item.label}</p>
+                      <p className="mt-1 text-sm text-white/45">
+                        {item.label}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -429,135 +557,170 @@ export default function CreatorPage() {
           </div>
         </div>
       </section>
-
       <section
-        id="support"
-        className="relative z-10 mx-auto grid max-w-7xl gap-6 px-5 pb-16 md:grid-cols-[0.9fr_1.1fr] md:px-8"
-      >
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-            Start supporting
-          </p>
-          <h3 className="mt-3 text-3xl font-black">Choose your support</h3>
-          <p className="mt-3 leading-7 text-white/50">
-            Your support activates your FanStreak and places you inside this
-            creator’s ranking system.
-          </p>
+  id="support"
+  className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8"
+>
+  <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+    <div className="max-w-3xl">
+      <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+        Start supporting
+      </p>
 
-          <div className="mt-7 grid grid-cols-2 gap-3">
-            {supportAmounts.map((amount) => {
-              const active = !isCustom && selectedAmount === amount;
+      <h3 className="mt-3 text-4xl font-black md:text-5xl">
+        Choose your support
+      </h3>
 
-              return (
-                <button
-                  key={amount}
-                  onClick={() => chooseAmount(amount)}
-                  className="rounded-2xl border py-4 text-xl font-black transition"
-                  style={{
-                    borderColor: active ? theme.border : "rgba(255,255,255,0.1)",
-                    background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
-                    boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
-                  }}
-                >
-                  {amount}
-                </button>
-              );
-            })}
+      <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+        Your support activates your FanStreak and places you inside this
+        creator’s ranking system.
+      </p>
+    </div>
 
-            <button
-              onClick={() => {
-                setIsCustom(true);
-                setSelectedAmount("");
-              }}
-              className="rounded-2xl border py-4 text-xl font-black transition"
-              style={{
-                borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
-                background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
-                boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
-              }}
-            >
-              Custom
-            </button>
-          </div>
+    <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      {supportAmounts.map((amount) => {
+        const active = !isCustom && selectedAmount === amount;
 
-          {isCustom && (
-            <div className="mt-4">
-              <label className="mb-2 block text-sm font-bold text-white/45">
-                Enter custom support amount
-              </label>
-              <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
-                <span className="mr-3 text-xl font-black">₹</span>
-                <input
-                  value={customAmount}
-                  onChange={(event) =>
-                    setCustomAmount(event.target.value.replace(/\D/g, ""))
-                  }
-                  className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
-                  placeholder="Enter amount"
-                  inputMode="numeric"
-                />
-              </div>
-            </div>
-          )}
-
+        return (
           <button
-            onClick={openSupportModal}
-            disabled={!canContinue}
-            className="mt-5 w-full rounded-2xl py-4 font-black text-white transition"
+            key={amount}
+            onClick={() => chooseAmount(amount)}
+            className="rounded-2xl border py-5 text-xl font-black transition hover:scale-[1.01]"
             style={{
-              background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
-              boxShadow: canContinue ? `0 0 40px ${theme.glow}` : undefined,
-              color: canContinue ? "white" : "rgba(255,255,255,0.3)",
+              borderColor: active ? theme.border : "rgba(255,255,255,0.1)",
+              background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
+              boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
             }}
           >
-            Continue with {finalAmount}
+            {amount}
           </button>
+        );
+      })}
 
-          <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
-            <p className="text-sm leading-6 text-white/45">
-              After payment, your streak begins and your fan profile appears on
-              this creator’s leaderboard.
-            </p>
-          </div>
+      <button
+        onClick={() => {
+          setIsCustom(true);
+          setSelectedAmount("");
+        }}
+        className="rounded-2xl border py-5 text-xl font-black transition hover:scale-[1.01]"
+        style={{
+          borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
+          background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
+          boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
+        }}
+      >
+        Custom
+      </button>
+    </div>
+
+    {isCustom && (
+      <div className="mt-5">
+        <label className="mb-2 block text-sm font-bold text-white/45">
+          Enter custom support amount
+        </label>
+
+        <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
+          <span className="mr-3 text-xl font-black">₹</span>
+          <input
+            value={customAmount}
+            onChange={(event) =>
+              setCustomAmount(event.target.value.replace(/\D/g, ""))
+            }
+            className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
+            placeholder="Enter amount"
+            inputMode="numeric"
+          />
         </div>
+      </div>
+    )}
 
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                Leaderboard
-              </p>
-              <h3 className="mt-3 text-3xl font-black">Top fans this week</h3>
-            </div>
-            <span className="rounded-full border border-white/10 bg-black/25 px-4 py-2 text-sm font-bold text-white/55">
-              Weekly
-            </span>
-          </div>
+    <button
+      onClick={openSupportModal}
+      disabled={!canContinue}
+      className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+      style={{
+        background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
+        boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
+        color: canContinue ? "white" : "rgba(255,255,255,0.3)",
+      }}
+    >
+      Continue with {finalAmount}
+    </button>
 
-          <div className="mt-7 space-y-3">
-            {leaderboard.map((fan) => (
+    <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+      <p className="text-base leading-7 text-white/45">
+        After payment, your streak begins and your fan profile appears on this
+        creator’s leaderboard.
+      </p>
+    </div>
+  </div>
+
+  <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+    <div className="max-w-3xl">
+      <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+        Fan competition
+      </p>
+
+      <h3 className="mt-3 text-4xl font-black md:text-5xl">
+        Three ways to become visible
+      </h3>
+
+      <p className="mt-4 text-lg leading-8 text-white/50">
+        Fans can climb through streaks, loyalty, or support value. Each
+        leaderboard gives them a different reason to return and keep supporting.
+      </p>
+    </div>
+
+    <div className="mt-8 grid gap-6 xl:grid-cols-3">
+      {leaderboardSets.map((board) => (
+        <div
+          key={board.title}
+          className="rounded-[2rem] border border-white/10 bg-black/25 p-5"
+        >
+          <h4 className="text-2xl font-black md:text-3xl">{board.title}</h4>
+
+          <p className="mt-3 min-h-[72px] text-sm leading-6 text-white/45">
+            {board.subtitle}
+          </p>
+
+          <div className="mt-6 space-y-3">
+            {board.fans.map((fan) => (
               <div
-                key={fan.rank}
-                className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-4"
+                key={`${board.title}-${fan.rank}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   <span
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl font-black"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
                     style={{ background: theme.gradient }}
                   >
                     {fan.rank}
                   </span>
+
                   <div>
                     <p className="font-black">{fan.name}</p>
-                    <p className="text-sm text-white/45">{fan.streak}</p>
+                    <p className="text-xs text-white/40">{fan.badge}</p>
                   </div>
                 </div>
-                <p className="text-sm font-black text-white/75">{fan.badge}</p>
+
+                <p
+                  className="bg-clip-text text-sm font-black text-transparent"
+                  style={{ backgroundImage: theme.text }}
+                >
+                  {fan.metric}
+                </p>
               </div>
             ))}
           </div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
+            <p className="text-sm leading-6 text-white/55">{board.reward}</p>
+          </div>
         </div>
-      </section>
+      ))}
+    </div>
+  </div>
+</section>
 
       <section className="relative z-10 mx-auto grid max-w-7xl gap-6 px-5 pb-20 md:grid-cols-2 md:px-8">
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
@@ -638,8 +801,16 @@ export default function CreatorPage() {
                   className="flex h-16 w-16 items-center justify-center rounded-2xl p-[2px]"
                   style={{ background: theme.gradient }}
                 >
-                  <div className="flex h-full w-full items-center justify-center rounded-[0.9rem] bg-[#101015] text-2xl font-black">
-                    {creatorInitial}
+                  <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[0.9rem] bg-[#101015] text-2xl font-black">
+                    {creatorProfile.profilePhoto ? (
+                      <img
+                        src={creatorProfile.profilePhoto}
+                        alt={creatorProfile.name}
+                        className="h-full w-full object-contain object-center"
+                      />
+                    ) : (
+                      creatorInitial
+                    )}
                   </div>
                 </div>
                 <div>
