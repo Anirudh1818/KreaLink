@@ -111,6 +111,57 @@ const rewards = [
   "Top fans can later unlock meetups, shoutouts, and brand rewards",
 ];
 
+const creatorDropEngine = {
+  title: "24-Hour FanStreak Drop",
+  status: "Ready to launch",
+  objective: "Drive support urgency and reward top fans",
+  rewards: [
+    "Highest Paid Fan → VIP Fan Wall spotlight",
+    "Top Streak Fans → Special streak recognition",
+    "Passport Fans → Priority shortlist for future drops",
+  ],
+};
+const creatorProStudio = {
+  brandScore: 87,
+  status: "Collab Ready",
+  headline: "Turn fan loyalty into brand value.",
+  subtitle:
+    "Use real fan support, Passport fans, streaks, and repeat activity to prove creator value to brands.",
+  proofSignals: [
+    "Active supporters",
+    "Passport fans",
+    "Repeat support",
+    "Longest streak",
+    "Support volume",
+    "Creator Drop activity",
+  ],
+  proTools: [
+    {
+      title: "Collab Proof Profile",
+      description:
+        "A premium brand-facing profile showing real fan loyalty, not just followers.",
+      tag: "Brand proof",
+    },
+    {
+      title: "Media Kit Generator",
+      description:
+        "Auto-generate a professional creator profile for brand pitches and PR deals.",
+      tag: "Pitch ready",
+    },
+    {
+      title: "Brand Request Inbox",
+      description:
+        "Manage PR, paid promo, affiliate, sponsorship, and giveaway enquiries in one place.",
+      tag: "Deal flow",
+    },
+    {
+      title: "Sponsored Fan Challenges",
+      description:
+        "Let brands sponsor FanStreak drops, fan challenges, coupons, hampers, and creator rewards.",
+      tag: "Revenue engine",
+    },
+  ],
+};
 export default function CreatorStudioPage() {
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -503,7 +554,222 @@ export default function CreatorStudioPage() {
           </div>
         </div>
       </section>
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+  <div
+    className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8"
+    style={{ boxShadow: `0 0 80px ${theme.glow}` }}
+  >
+    <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+      <div>
+        <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+          Creator Drop Engine
+        </p>
 
+        <h3 className="mt-3 text-4xl font-black md:text-5xl">
+          Launch limited-time fan challenges.
+        </h3>
+
+        <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+          Creator Drops help you turn normal fan support into urgency,
+          competition, and repeat participation.
+        </p>
+
+        <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-5">
+          <p className="text-sm text-white/45">Drop objective</p>
+          <p className="mt-2 text-xl font-black">
+            {creatorDropEngine.objective}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-white/10 bg-black/30 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p
+              className="bg-clip-text text-sm font-black uppercase tracking-[0.22em] text-transparent"
+              style={{ backgroundImage: theme.text }}
+            >
+              {creatorDropEngine.status}
+            </p>
+            <h4 className="mt-3 text-3xl font-black">
+              {creatorDropEngine.title}
+            </h4>
+          </div>
+
+          <span className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/55">
+            24h
+          </span>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {creatorDropEngine.rewards.map((reward) => (
+            <div
+              key={reward}
+              className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            >
+              <p className="font-bold text-white/70">{reward}</p>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={() =>
+            alert("Creator Drop launch flow will be connected after payment and fan tracking setup.")
+          }
+          className="mt-6 w-full rounded-2xl py-4 font-black text-white"
+          style={{
+            background: theme.gradient,
+            boxShadow: `0 0 40px ${theme.glow}`,
+          }}
+        >
+          Launch Drop
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+<section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+  <div
+    className="rounded-[2.5rem] p-[1px]"
+    style={{
+      background: theme.gradient,
+      boxShadow: `0 0 90px ${theme.glow}`,
+    }}
+  >
+    <div className="relative overflow-hidden rounded-[2.45rem] border border-white/10 bg-[#08060d] p-6 md:p-8">
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute right-0 top-0 h-80 w-80 rounded-full blur-[100px]"
+          style={{ background: theme.glow }}
+        />
+        <div className="absolute inset-x-0 top-0 h-36 bg-white/[0.025]" />
+      </div>
+
+      <div className="relative grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+            Creator Pro Studio
+          </p>
+
+          <h3 className="mt-3 text-4xl font-black leading-tight md:text-5xl">
+            {creatorProStudio.headline}
+          </h3>
+
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+            {creatorProStudio.subtitle}
+          </p>
+
+          <div className="mt-7 rounded-[2rem] border border-white/10 bg-black/30 p-6">
+            <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-white/35">
+                  FanStreak BrandScore
+                </p>
+
+                <p
+                  className="mt-3 bg-clip-text text-6xl font-black text-transparent"
+                  style={{ backgroundImage: theme.text }}
+                >
+                  {creatorProStudio.brandScore}/100
+                </p>
+
+                <p className="mt-2 text-lg font-black text-white/55">
+                  {creatorProStudio.status}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
+                <p className="text-sm leading-6 text-white/45">
+                  Brands do not only need creators with followers. They need
+                  creators with fans who act.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-white/10 bg-black/30 p-5">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/35">
+            Brand proof signals
+          </p>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {creatorProStudio.proofSignals.map((signal) => (
+              <div
+                key={signal}
+                className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+              >
+                <p className="font-black text-white/70">✦ {signal}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
+            <p className="text-sm leading-6 text-white/45">
+              This score will become stronger as real support, Passport fans,
+              drops, and repeat fan activity grow.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {creatorProStudio.proTools.map((tool) => (
+          <div
+            key={tool.title}
+            className="rounded-[1.7rem] border border-white/10 bg-black/30 p-5"
+          >
+            <span
+              className="rounded-full px-3 py-1 text-xs font-black"
+              style={{ background: theme.softGradient }}
+            >
+              {tool.tag}
+            </span>
+
+            <h4 className="mt-5 text-2xl font-black">{tool.title}</h4>
+
+            <p className="mt-3 text-sm leading-6 text-white/45">
+              {tool.description}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="relative mt-8 grid gap-4 md:grid-cols-3">
+        <button
+          onClick={() =>
+            alert("Media Kit Generator will connect after real fan analytics and brand profile setup.")
+          }
+          className="rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-4 font-black text-white/70 transition hover:bg-white/[0.08]"
+        >
+          Generate Media Kit
+        </button>
+
+        <button
+          onClick={() =>
+            alert("Brand Request Inbox will connect after creator verification and brand onboarding.")
+          }
+          className="rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-4 font-black text-white/70 transition hover:bg-white/[0.08]"
+        >
+          Open Brand Inbox
+        </button>
+
+        <button
+          onClick={() =>
+            alert("Sponsored Fan Challenges will connect after payments, drops, and campaign tools are ready.")
+          }
+          className="rounded-2xl px-5 py-4 font-black text-white transition hover:scale-[1.01]"
+          style={{
+            background: theme.gradient,
+            boxShadow: `0 0 40px ${theme.glow}`,
+          }}
+        >
+          Create Sponsored Challenge
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
         <div className="mb-6">
           <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">

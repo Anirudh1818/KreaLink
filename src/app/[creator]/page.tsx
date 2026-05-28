@@ -6,7 +6,33 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
-const supportAmounts = ["₹9", "₹19", "₹49", "₹599", "₹999"];
+const supportLevels = [
+  {
+    amount: "₹9",
+    title: "Starter Fan",
+    description: "Start your FanStreak",
+  },
+  {
+    amount: "₹19",
+    title: "Active Fan",
+    description: "Keep your name visible",
+  },
+  {
+    amount: "₹49",
+    title: "Loyal Fan",
+    description: "Climb loyalty rankings",
+  },
+  {
+    amount: "₹599",
+    title: "Elite Fan",
+    description: "Enter premium fan zone",
+  },
+  {
+    amount: "₹999",
+    title: "VIP Fan",
+    description: "Compete for top recognition",
+  },
+];
 
 const badges = ["Early Supporter", "7-Day Streak", "Top Fan", "Diamond Fan"];
 
@@ -18,7 +44,9 @@ type CreatorProfile = {
   status: string;
   supporters: string;
   volume: string;
+  theme: ThemeKey;
   profilePhoto: string;
+  email: string;
   verified: boolean;
   socialLinks: {
     instagram?: string;
@@ -33,19 +61,6 @@ type LeaderboardFan = {
   name: string;
   badge: string;
   metric: string;
-};
-
-const fallbackCreator: CreatorProfile = {
-  name: "Creator",
-  username: "creator",
-  category: "Creator",
-  bio: "This creator profile is not live yet.",
-  status: "Pending",
-  supporters: "0",
-  volume: "₹0",
-  profilePhoto: "",
-  verified: false,
-  socialLinks: {},
 };
 
 const leaderboardSets: {
@@ -100,30 +115,90 @@ const leaderboardSets: {
   },
 ];
 
+const activeCreatorDrop = {
+  status: "Live Drop",
+  title: "24-Hour FanStreak Drop",
+  subtitle:
+    "Support now and compete for premium fan recognition before this drop ends.",
+  rewards: [
+    {
+      icon: "👑",
+      title: "Highest Paid Fan",
+      description: "Gets VIP Fan Wall spotlight",
+    },
+    {
+      icon: "🔥",
+      title: "Top Streak Fans",
+      description: "Unlock special streak recognition",
+    },
+    {
+      icon: "🎟️",
+      title: "Passport Fans",
+      description: "Get priority shortlist for future drops",
+    },
+  ],
+};
+
+const fanPassport = {
+  price: "₹99",
+  title: "FanStreak Passport",
+  subtitle:
+    "Own a premium fan identity inside this creator’s community without affecting fair streak rankings.",
+  benefits: [
+    "Premium digital Passport Card",
+    "QR-linked live fan profile",
+    "Passport badge on fan identity",
+    "Creator Drop priority alerts",
+    "Passport Fan Wall visibility",
+    "Future meetup priority consideration",
+  ],
+};
+
+const fallbackStudioCreator: CreatorProfile = {
+  name: "Samay Raina",
+  username: "samay",
+  category: "Comedy Creator",
+  bio: "Comedy creator · creator community · fan recognition",
+  status: "Live",
+  supporters: "21.2K",
+  volume: "₹8.72L",
+  theme: "flame",
+  profilePhoto: "",
+  email: "",
+  verified: true,
+  socialLinks: {},
+};
+
+function getParamValue(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0] || "";
+  return value || "";
+}
+
+function getInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || "F";
+}
+
+function splitName(name: string) {
+  const parts = name.trim().split(/\s+/);
+
+  return {
+    firstName: parts[0] || name,
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
 function normalizeUrl(value?: string) {
-  const cleanValue = String(value || "").trim();
-
-  if (!cleanValue) {
-    return "";
-  }
-
-  if (cleanValue.startsWith("http://") || cleanValue.startsWith("https://")) {
-    return cleanValue;
-  }
-
-  return `https://${cleanValue}`;
+  if (!value) return "#";
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  return `https://${value}`;
 }
 
 export default function CreatorPage() {
   const params = useParams();
-  const rawCreator = params?.creator as string | string[] | undefined;
-
-  const creatorUsername = Array.isArray(rawCreator)
-    ? rawCreator[0].toLowerCase()
-    : String(rawCreator || "creator").toLowerCase();
+  const creatorUsername = getParamValue(params?.creator);
 
   const [creatorProfile, setCreatorProfile] =
-    useState<CreatorProfile>(fallbackCreator);
+    useState<CreatorProfile>(fallbackStudioCreator);
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
 
@@ -131,11 +206,129 @@ export default function CreatorPage() {
   const [customAmount, setCustomAmount] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [isPassportModalOpen, setIsPassportModalOpen] = useState(false);
+  const [passportFanName, setPassportFanName] = useState("");
+  const [isPassportActive, setIsPassportActive] = useState(false);
+
   const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const [dropTimeLeft, setDropTimeLeft] = useState("24h 00m");
+  const [isDropEnded, setIsDropEnded] = useState(false);
 
   const theme = themes[activeTheme];
+
   const finalAmount = isCustom ? `₹${customAmount || "0"}` : selectedAmount;
   const canContinue = !isCustom || Number(customAmount) > 0;
+
+  const selectedSupportLevel = supportLevels.find(
+    (level) => level.amount === selectedAmount
+  );
+
+  const selectedSupportTitle = isCustom
+    ? "Power Supporter"
+    : selectedSupportLevel?.title || "Supporter";
+
+  const passportDisplayName =
+    isPassportActive && passportFanName.trim() ? passportFanName : "XXXX XXXX";
+
+  const passportDisplayCreator = isPassportActive
+    ? creatorProfile.name
+    : "XXXX XXXX";
+
+  const passportDisplayId = isPassportActive
+    ? `FS-${getPassportSlug().slice(0, 10).toUpperCase()}`
+    : "FS-XXXX-XXXX";
+
+  const passportPath = `/passport/${getPassportSlug()}?creator=${
+    creatorProfile.username
+  }&creatorName=${encodeURIComponent(
+    passportDisplayCreator
+  )}&fanName=${encodeURIComponent(
+    passportDisplayName
+  )}&passportId=${encodeURIComponent(passportDisplayId)}`;
+
+  const passportQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(
+    `https://fan-streak.vercel.app${passportPath}`
+  )}`;
+
+  const creatorInitial = getInitial(creatorProfile.name);
+  const { firstName, lastName } = splitName(creatorProfile.name);
+
+  const availableSocialLinks = [
+    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
+    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
+    { label: "X", value: creatorProfile.socialLinks.x },
+    { label: "Website", value: creatorProfile.socialLinks.website },
+  ].filter((link) => Boolean(link.value));
+
+  const creatorHeroStats = [
+    { label: "Supporters", value: creatorProfile.supporters || "0" },
+    { label: "Record streak", value: "103d" },
+    { label: "Reward zone", value: "Top 5" },
+    { label: "Elite badges", value: String(badges.length) },
+  ];
+
+  useEffect(() => {
+    async function loadCreator() {
+      if (!creatorUsername) {
+        setCreatorNotFound(true);
+        setIsLoadingCreator(false);
+        return;
+      }
+
+      try {
+        const creatorRef = doc(db, "creators", creatorUsername);
+        const creatorSnap = await getDoc(creatorRef);
+
+        if (!creatorSnap.exists()) {
+          if (creatorUsername === fallbackStudioCreator.username) {
+            setCreatorProfile(fallbackStudioCreator);
+            setActiveTheme(fallbackStudioCreator.theme);
+            setCreatorNotFound(false);
+          } else {
+            setCreatorNotFound(true);
+          }
+
+          setIsLoadingCreator(false);
+          return;
+        }
+
+        const data = creatorSnap.data();
+        const nextTheme = isThemeKey(data.theme) ? data.theme : "flame";
+
+        const nextCreator: CreatorProfile = {
+          name: String(data.name || "Creator"),
+          username: String(data.username || creatorUsername),
+          category: String(data.category || "Creator"),
+          bio: String(data.bio || "Creator community · fan recognition"),
+          status: String(data.status || "Live"),
+          supporters: String(data.supporters || "0"),
+          volume: String(data.volume || "₹0"),
+          theme: nextTheme,
+          profilePhoto: String(data.profilePhoto || ""),
+          email: String(data.email || ""),
+          verified: Boolean(data.verified),
+          socialLinks: {
+            instagram: data.socialLinks?.instagram || data.instagram || "",
+            youtube: data.socialLinks?.youtube || data.youtube || "",
+            x: data.socialLinks?.x || data.x || "",
+            website: data.socialLinks?.website || data.website || "",
+          },
+        };
+
+        setCreatorProfile(nextCreator);
+        setActiveTheme(nextTheme);
+        setCreatorNotFound(false);
+      } catch (error) {
+        console.error("Failed to load creator", error);
+        setCreatorNotFound(true);
+      } finally {
+        setIsLoadingCreator(false);
+      }
+    }
+
+    loadCreator();
+  }, [creatorUsername]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("fanstreak-theme");
@@ -146,57 +339,59 @@ export default function CreatorPage() {
   }, []);
 
   useEffect(() => {
-    async function loadCreatorProfile() {
-      try {
-        setIsLoadingCreator(true);
-        setCreatorNotFound(false);
+    const passportKey = `fanstreak-passport-active-${creatorUsername}`;
+    const passportNameKey = `fanstreak-passport-name-${creatorUsername}`;
 
-        const creatorRef = doc(db, "creators", creatorUsername);
-        const creatorSnapshot = await getDoc(creatorRef);
+    const savedPassport = localStorage.getItem(passportKey);
+    const savedPassportName = localStorage.getItem(passportNameKey);
 
-        if (!creatorSnapshot.exists()) {
-          setCreatorNotFound(true);
-          return;
-        }
-
-        const data = creatorSnapshot.data();
-
-        setCreatorProfile({
-          name: String(data.name || "Creator"),
-          username: String(data.username || creatorSnapshot.id),
-          category: String(data.category || "Creator"),
-          bio: String(
-            data.bio ||
-              `${String(data.name || "Creator")} · ${String(
-                data.category || "Creator"
-              )} · fan recognition`
-          ),
-          status: String(data.status || "Pending"),
-          supporters: String(data.supporters || "0"),
-          volume: String(data.volume || "₹0"),
-          profilePhoto: String(data.profilePhoto || ""),
-          verified: Boolean(data.verified || false),
-          socialLinks: {
-            instagram: String(data.socialLinks?.instagram || ""),
-            youtube: String(data.socialLinks?.youtube || ""),
-            x: String(data.socialLinks?.x || ""),
-            website: String(data.socialLinks?.website || ""),
-          },
-        });
-
-        if (isThemeKey(String(data.theme || ""))) {
-          setActiveTheme(data.theme as ThemeKey);
-          localStorage.setItem("fanstreak-theme", data.theme as ThemeKey);
-        }
-      } catch (error) {
-        console.error("Failed to load creator profile:", error);
-        setCreatorNotFound(true);
-      } finally {
-        setIsLoadingCreator(false);
-      }
+    if (savedPassport === "true") {
+      setIsPassportActive(true);
     }
 
-    loadCreatorProfile();
+    if (savedPassportName) {
+      setPassportFanName(savedPassportName);
+    }
+  }, [creatorUsername]);
+
+  useEffect(() => {
+    if (!creatorUsername) return;
+
+    const storageKey = `fanstreak-drop-start-${creatorUsername}`;
+    const dropDurationMs = 24 * 60 * 60 * 1000;
+
+    let dropStartTime = Number(localStorage.getItem(storageKey));
+
+    if (!dropStartTime) {
+      dropStartTime = Date.now();
+      localStorage.setItem(storageKey, String(dropStartTime));
+    }
+
+    const dropEndTime = dropStartTime + dropDurationMs;
+
+    function updateDropTimer() {
+      const remainingMs = dropEndTime - Date.now();
+
+      if (remainingMs <= 0) {
+        setDropTimeLeft("Ended");
+        setIsDropEnded(true);
+        return;
+      }
+
+      const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+      const minutes = Math.floor(
+        (remainingMs % (1000 * 60 * 60)) / (1000 * 60)
+      );
+
+      setDropTimeLeft(`${hours}h ${minutes}m`);
+      setIsDropEnded(false);
+    }
+
+    updateDropTimer();
+
+    const interval = setInterval(updateDropTimer, 60000);
+
+    return () => clearInterval(interval);
   }, [creatorUsername]);
 
   function changeTheme(themeKey: ThemeKey) {
@@ -205,9 +400,8 @@ export default function CreatorPage() {
   }
 
   function chooseAmount(amount: string) {
-    setSelectedAmount(amount);
     setIsCustom(false);
-    setCustomAmount("");
+    setSelectedAmount(amount);
   }
 
   function openSupportModal() {
@@ -215,29 +409,41 @@ export default function CreatorPage() {
     setIsModalOpen(true);
   }
 
-  const creatorInitial =
-    creatorProfile.name.trim().charAt(0).toUpperCase() || "C";
+  function getPassportSlug() {
+    const cleanName = passportFanName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
 
-  const nameParts = creatorProfile.name.trim().split(/\s+/).filter(Boolean);
-  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
-  const firstName =
-    nameParts.length > 1
-      ? nameParts.slice(0, -1).join(" ")
-      : creatorProfile.name;
+    return cleanName || "passport-fan";
+  }
 
-  const availableSocialLinks = [
-    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
-    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
-    { label: "X", value: creatorProfile.socialLinks.x },
-    { label: "Website", value: creatorProfile.socialLinks.website },
-  ].filter((item) => item.value && item.value.trim().length > 0);
+  function activatePassport() {
+    if (!passportFanName.trim()) {
+      alert("Please enter fan name for the Passport card.");
+      return;
+    }
 
-  const creatorHeroStats = [
-    { value: creatorProfile.supporters, label: "Supporters" },
-    { value: "103d", label: "Record streak" },
-    { value: "Top 5", label: "Reward zone" },
-    { value: "4", label: "Elite badges" },
-  ];
+    const newPassportId = `FS-${getPassportSlug().slice(0, 10).toUpperCase()}`;
+
+    localStorage.setItem(`fanstreak-passport-active-${creatorUsername}`, "true");
+    localStorage.setItem(
+      `fanstreak-passport-name-${creatorUsername}`,
+      passportFanName
+    );
+
+    setIsPassportActive(true);
+    setIsPassportModalOpen(false);
+
+    window.location.href = `/passport/${getPassportSlug()}?creator=${
+      creatorProfile.username
+    }&creatorName=${encodeURIComponent(
+      creatorProfile.name
+    )}&fanName=${encodeURIComponent(
+      passportFanName
+    )}&passportId=${encodeURIComponent(newPassportId)}`;
+  }
 
   if (isLoadingCreator) {
     return (
@@ -317,6 +523,7 @@ export default function CreatorPage() {
             >
               <span className="text-2xl">🔥</span>
             </div>
+
             <div>
               <h1
                 className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
@@ -370,10 +577,7 @@ export default function CreatorPage() {
             <div className="relative grid gap-8 md:grid-cols-[1fr_420px] md:items-center">
               <div>
                 <div className="mb-6 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70 backdrop-blur-xl">
-                  {creatorProfile.status === "Live"
-                    ? "Verified Creator World"
-                    : "Creator World Preview"}{" "}
-                  · {theme.name}
+                  Creator World Preview · {theme.name}
                 </div>
 
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -480,7 +684,7 @@ export default function CreatorPage() {
 
                   <a
                     href="#support"
-                    className="mt-6 block w-full rounded-2xl py-4 text-center font-black text-white transition hover:scale-[1.01]"
+                    className="mt-7 block rounded-2xl px-6 py-4 text-center font-black text-white"
                     style={{
                       background: theme.gradient,
                       boxShadow: `0 0 45px ${theme.glow}`,
@@ -489,15 +693,19 @@ export default function CreatorPage() {
                     Start your FanStreak →
                   </a>
 
-                  <div className="mt-5 grid grid-cols-3 gap-2 text-center">
-                    {["🔥 Streak", "🏆 Rank", "💎 Badge"].map((item) => (
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    {[
+                      { icon: "🔥", label: "Streak" },
+                      { icon: "🏆", label: "Rank" },
+                      { icon: "💎", label: "Badge" },
+                    ].map((item) => (
                       <div
-                        key={item}
-                        className="rounded-2xl border border-white/10 bg-black/25 p-3"
+                        key={item.label}
+                        className="rounded-2xl border border-white/10 bg-black/25 p-4 text-center"
                       >
-                        <p className="text-xl">{item.split(" ")[0]}</p>
-                        <p className="mt-1 text-xs font-bold text-white/45">
-                          {item.split(" ")[1]}
+                        <p className="text-2xl">{item.icon}</p>
+                        <p className="mt-2 text-sm font-black text-white/50">
+                          {item.label}
                         </p>
                       </div>
                     ))}
@@ -505,222 +713,490 @@ export default function CreatorPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
 
-            <div className="relative mt-8 rounded-[2rem] border border-white/10 bg-black/25 p-4">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                    Theme preview
-                  </p>
-                  <p className="mt-2 text-lg font-black">
-                    Switch creator world theme
-                  </p>
+      {/* Creator Drop Engine */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+        <div
+          className="rounded-[2.4rem] p-[1px]"
+          style={{
+            background: theme.gradient,
+            boxShadow: `0 0 80px ${theme.glow}`,
+          }}
+        >
+          <div className="relative overflow-hidden rounded-[2.35rem] border border-white/10 bg-[#08060d] p-6 md:p-8">
+            <div className="pointer-events-none absolute inset-0">
+              <div
+                className="absolute right-0 top-0 h-64 w-64 rounded-full blur-[90px]"
+                style={{ background: theme.glow }}
+              />
+              <div className="absolute inset-x-0 top-0 h-28 bg-white/[0.025]" />
+            </div>
+
+            <div className="relative grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+              <div>
+                <div className="inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70">
+                  🔥 {activeCreatorDrop.status}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                  {(Object.keys(themes) as ThemeKey[]).map((key) => {
-                    const item = themes[key];
-                    const active = activeTheme === key;
+                <h3 className="mt-5 text-4xl font-black leading-tight md:text-5xl">
+                  {activeCreatorDrop.title}
+                </h3>
 
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => changeTheme(key)}
-                        className={`rounded-2xl border px-4 py-3 text-left transition ${
-                          active
-                            ? "bg-white/[0.09] text-white"
-                            : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
-                        }`}
-                        style={{
-                          borderColor: active ? item.border : undefined,
-                          boxShadow: active
-                            ? `0 0 25px ${item.glow}`
-                            : undefined,
-                        }}
-                      >
-                        <span
-                          className="mb-2 block h-3 w-full rounded-full"
-                          style={{ background: item.gradient }}
-                        />
-                        <span className="block text-sm font-black">
-                          {item.name}
-                        </span>
-                        <span className="text-xs text-white/35">
-                          {item.label}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <p className="mt-4 max-w-2xl text-lg leading-8 text-white/55">
+                  {activeCreatorDrop.subtitle}
+                </p>
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-5">
+                  <p className="text-sm font-black uppercase tracking-[0.22em] text-white/35">
+                    Drop ends in
+                  </p>
+                  <p
+                    className="mt-2 bg-clip-text text-4xl font-black text-transparent"
+                    style={{ backgroundImage: theme.text }}
+                  >
+                    {dropTimeLeft}
+                  </p>
                 </div>
               </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {activeCreatorDrop.rewards.map((reward) => (
+                  <div
+                    key={reward.title}
+                    className="rounded-[1.7rem] border border-white/10 bg-black/30 p-5"
+                  >
+                    <p className="text-3xl">{reward.icon}</p>
+                    <h4 className="mt-4 text-xl font-black">{reward.title}</h4>
+                    <p className="mt-2 text-sm leading-6 text-white/45">
+                      {reward.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <p className="text-sm leading-6 text-white/45">
+                Creator Drops turn normal support into a limited-time fan
+                competition. Higher support, stronger streaks, and Passport
+                status improve fan visibility.
+              </p>
+
+              <a
+                href={isDropEnded ? undefined : "#support"}
+                className="rounded-2xl px-6 py-4 text-center font-black text-white transition hover:scale-[1.01]"
+                style={{
+                  background: isDropEnded
+                    ? "rgba(255,255,255,0.1)"
+                    : theme.gradient,
+                  boxShadow: isDropEnded ? undefined : `0 0 35px ${theme.glow}`,
+                }}
+              >
+                {isDropEnded ? "Drop Ended" : "Join Drop →"}
+              </a>
             </div>
           </div>
         </div>
       </section>
-      <section
-  id="support"
-  className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8"
->
-  <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-    <div className="max-w-3xl">
-      <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-        Start supporting
-      </p>
 
-      <h3 className="mt-3 text-4xl font-black md:text-5xl">
-        Choose your support
-      </h3>
+      {/* FanStreak Passport */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+          <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+              Premium fan identity
+            </p>
 
-      <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
-        Your support activates your FanStreak and places you inside this
-        creator’s ranking system.
-      </p>
-    </div>
+            <h3 className="mt-3 text-4xl font-black md:text-5xl">
+              Unlock {fanPassport.title}
+            </h3>
 
-    <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      {supportAmounts.map((amount) => {
-        const active = !isCustom && selectedAmount === amount;
+            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+              {fanPassport.subtitle}
+            </p>
 
-        return (
-          <button
-            key={amount}
-            onClick={() => chooseAmount(amount)}
-            className="rounded-2xl border py-5 text-xl font-black transition hover:scale-[1.01]"
-            style={{
-              borderColor: active ? theme.border : "rgba(255,255,255,0.1)",
-              background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
-              boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
-            }}
-          >
-            {amount}
-          </button>
-        );
-      })}
-
-      <button
-        onClick={() => {
-          setIsCustom(true);
-          setSelectedAmount("");
-        }}
-        className="rounded-2xl border py-5 text-xl font-black transition hover:scale-[1.01]"
-        style={{
-          borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
-          background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
-          boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
-        }}
-      >
-        Custom
-      </button>
-    </div>
-
-    {isCustom && (
-      <div className="mt-5">
-        <label className="mb-2 block text-sm font-bold text-white/45">
-          Enter custom support amount
-        </label>
-
-        <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
-          <span className="mr-3 text-xl font-black">₹</span>
-          <input
-            value={customAmount}
-            onChange={(event) =>
-              setCustomAmount(event.target.value.replace(/\D/g, ""))
-            }
-            className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
-            placeholder="Enter amount"
-            inputMode="numeric"
-          />
-        </div>
-      </div>
-    )}
-
-    <button
-      onClick={openSupportModal}
-      disabled={!canContinue}
-      className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-      style={{
-        background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
-        boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
-        color: canContinue ? "white" : "rgba(255,255,255,0.3)",
-      }}
-    >
-      Continue with {finalAmount}
-    </button>
-
-    <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
-      <p className="text-base leading-7 text-white/45">
-        After payment, your streak begins and your fan profile appears on this
-        creator’s leaderboard.
-      </p>
-    </div>
-  </div>
-
-  <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-    <div className="max-w-3xl">
-      <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-        Fan competition
-      </p>
-
-      <h3 className="mt-3 text-4xl font-black md:text-5xl">
-        Three ways to become visible
-      </h3>
-
-      <p className="mt-4 text-lg leading-8 text-white/50">
-        Fans can climb through streaks, loyalty, or support value. Each
-        leaderboard gives them a different reason to return and keep supporting.
-      </p>
-    </div>
-
-    <div className="mt-8 grid gap-6 xl:grid-cols-3">
-      {leaderboardSets.map((board) => (
-        <div
-          key={board.title}
-          className="rounded-[2rem] border border-white/10 bg-black/25 p-5"
-        >
-          <h4 className="text-2xl font-black md:text-3xl">{board.title}</h4>
-
-          <p className="mt-3 min-h-[72px] text-sm leading-6 text-white/45">
-            {board.subtitle}
-          </p>
-
-          <div className="mt-6 space-y-3">
-            {board.fans.map((fan) => (
-              <div
-                key={`${board.title}-${fan.rank}`}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+            <div className="mt-6 flex flex-wrap items-end gap-3">
+              <p
+                className="bg-clip-text text-5xl font-black text-transparent"
+                style={{ backgroundImage: theme.text }}
               >
-                <div className="flex items-center gap-3">
-                  <span
-                    className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
-                    style={{ background: theme.gradient }}
-                  >
-                    {fan.rank}
-                  </span>
+                {fanPassport.price}
+              </p>
+              <p className="pb-2 text-sm font-bold text-white/45">
+                one-time fan identity upgrade
+              </p>
+            </div>
 
-                  <div>
-                    <p className="font-black">{fan.name}</p>
-                    <p className="text-xs text-white/40">{fan.badge}</p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              {fanPassport.benefits.map((benefit) => (
+                <div
+                  key={benefit}
+                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                >
+                  <p className="font-bold text-white/70">✦ {benefit}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-sm leading-6 text-white/45">
+                Fair play: Passport does not buy rank. Streaks and leaderboard
+                positions still depend on real support and consistency.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsPassportModalOpen(true)}
+              className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01]"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 45px ${theme.glow}`,
+              }}
+            >
+              {isPassportActive
+                ? "View / Update Passport"
+                : "Unlock Passport — ₹99"}
+            </button>
+          </div>
+
+          <div className="relative min-h-[680px]">
+            <div
+              className="absolute right-0 top-0 h-72 w-72 rounded-full blur-[95px]"
+              style={{ background: theme.glow }}
+            />
+
+            <div
+              className="relative ml-auto max-w-[560px] rotate-[3deg] rounded-[2rem] p-[1px]"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 80px ${theme.glow}`,
+              }}
+            >
+              <div className="rounded-[1.95rem] border border-white/10 bg-[#06060a]/95 p-6 backdrop-blur-xl">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🔥</span>
+                  <p className="text-xl font-black">FanStreak</p>
+                </div>
+
+                <div className="mt-7 flex items-center gap-4">
+                  <div className="h-[1px] flex-1 bg-white/10" />
+                  <p
+                    className="bg-clip-text text-xs font-black uppercase tracking-[0.4em] text-transparent"
+                    style={{ backgroundImage: theme.text }}
+                  >
+                    Passport Benefits
+                  </p>
+                  <div className="h-[1px] flex-1 bg-white/10" />
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  {[
+                    "Shareable Fan Identity",
+                    "Priority Creator Drop Alerts",
+                    "Meetup Priority Consideration",
+                    "Passport Fan Wall Access",
+                    "Premium Passport Badge",
+                  ].map((benefit) => (
+                    <div
+                      key={benefit}
+                      className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-4"
+                    >
+                      <p className="font-bold text-white/75">✦ {benefit}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-black/35 p-4">
+                  <p className="text-xs leading-6 text-white/45">
+                    Fair play: streaks and rankings still depend on real support
+                    and consistency.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="relative -mt-24 max-w-[590px] -rotate-[4deg] rounded-[2rem] p-[1px]"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 100px ${theme.glow}`,
+              }}
+            >
+              <div className="relative overflow-hidden rounded-[1.95rem] border border-white/10 bg-[#050508]/95 p-7 backdrop-blur-xl">
+                <div className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute -right-16 -top-16 h-72 w-72 rounded-full blur-[90px]"
+                    style={{ background: theme.glow }}
+                  />
+                  <div className="absolute inset-0 opacity-[0.08]">
+                    <div className="h-full w-full bg-[radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:22px_22px]" />
                   </div>
                 </div>
 
-                <p
-                  className="bg-clip-text text-sm font-black text-transparent"
-                  style={{ backgroundImage: theme.text }}
+                <div className="relative flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">🔥</span>
+                    <p className="text-2xl font-black">FanStreak</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                      Digital
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative mt-10">
+                  <h4 className="text-5xl font-black leading-none">
+                    FanStreak
+                    <br />
+                    <span
+                      className="bg-clip-text text-transparent"
+                      style={{ backgroundImage: theme.text }}
+                    >
+                      Passport
+                    </span>
+                  </h4>
+                </div>
+
+                <div className="relative mt-10 grid gap-6 md:grid-cols-[1fr_150px] md:items-end">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.3em] text-white/35">
+                      Passport Fan
+                    </p>
+                    <p className="mt-3 text-3xl font-black">
+                      {passportDisplayName}
+                    </p>
+
+                    <div className="mt-6 h-[1px] w-full bg-white/10" />
+
+                    <p className="mt-6 text-xs font-black uppercase tracking-[0.3em] text-white/35">
+                      Supporter of
+                    </p>
+                    <p className="mt-2 text-xl font-black text-white/80">
+                      {passportDisplayCreator}
+                    </p>
+
+                    <p className="mt-7 text-xs font-black uppercase tracking-[0.3em] text-white/35">
+                      Passport ID
+                    </p>
+                    <p
+                      className="mt-2 bg-clip-text text-2xl font-black tracking-[0.18em] text-transparent"
+                      style={{ backgroundImage: theme.text }}
+                    >
+                      {passportDisplayId}
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.4rem] border border-white/10 bg-white p-3">
+                    <img
+                      src={passportQrUrl}
+                      alt="FanStreak Passport QR"
+                      className="h-32 w-32 rounded-xl"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <a
+              href={passportPath}
+              className="mt-8 block rounded-2xl border border-white/10 bg-white/[0.05] py-4 text-center font-black text-white/70 transition hover:bg-white/[0.08]"
+            >
+              {isPassportActive
+                ? "Open live Passport page →"
+                : "Preview Passport page with masked details →"}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="support"
+        className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8"
+      >
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+              Start supporting
+            </p>
+
+            <h3 className="mt-3 text-4xl font-black md:text-5xl">
+              Choose your support
+            </h3>
+
+            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+              Your support activates your FanStreak and places you inside this
+              creator’s ranking system.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {supportLevels.map((level) => {
+              const active = !isCustom && selectedAmount === level.amount;
+
+              return (
+                <button
+                  key={level.amount}
+                  onClick={() => chooseAmount(level.amount)}
+                  className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
+                  style={{
+                    borderColor: active
+                      ? theme.border
+                      : "rgba(255,255,255,0.1)",
+                    background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
+                    boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
+                  }}
                 >
-                  {fan.metric}
+                  <p className="text-2xl font-black">{level.amount}</p>
+                  <p className="mt-2 text-base font-black text-white">
+                    {level.title}
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-white/45">
+                    {level.description}
+                  </p>
+                </button>
+              );
+            })}
+
+            <button
+              onClick={() => {
+                setIsCustom(true);
+                setSelectedAmount("");
+              }}
+              className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
+              style={{
+                borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
+                background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
+                boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
+              }}
+            >
+              <p className="text-2xl font-black">Custom</p>
+              <p className="mt-2 text-base font-black text-white">
+                Power Supporter
+              </p>
+              <p className="mt-1 text-sm leading-5 text-white/45">
+                Support without limits
+              </p>
+            </button>
+          </div>
+
+          {isCustom && (
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-bold text-white/45">
+                Enter custom support amount
+              </label>
+
+              <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
+                <span className="mr-3 text-xl font-black">₹</span>
+                <input
+                  value={customAmount}
+                  onChange={(event) =>
+                    setCustomAmount(event.target.value.replace(/\D/g, ""))
+                  }
+                  className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
+                  placeholder="Enter amount"
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={openSupportModal}
+            disabled={!canContinue}
+            className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
+              boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
+              color: canContinue ? "white" : "rgba(255,255,255,0.3)",
+            }}
+          >
+            Continue as {selectedSupportTitle} — {finalAmount}
+          </button>
+
+          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+            <p className="text-base leading-7 text-white/45">
+              After payment, your streak begins and your fan profile appears on
+              this creator’s leaderboard.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+              Fan competition
+            </p>
+
+            <h3 className="mt-3 text-4xl font-black md:text-5xl">
+              Three ways to become visible
+            </h3>
+
+            <p className="mt-4 text-lg leading-8 text-white/50">
+              Fans can climb through streaks, loyalty, or support value. Each
+              leaderboard gives them a different reason to return and keep
+              supporting.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-6 xl:grid-cols-3">
+            {leaderboardSets.map((board) => (
+              <div
+                key={board.title}
+                className="rounded-[2rem] border border-white/10 bg-black/25 p-5"
+              >
+                <h4 className="text-2xl font-black md:text-3xl">
+                  {board.title}
+                </h4>
+
+                <p className="mt-3 min-h-[72px] text-sm leading-6 text-white/45">
+                  {board.subtitle}
                 </p>
+
+                <div className="mt-6 space-y-3">
+                  {board.fans.map((fan) => (
+                    <div
+                      key={`${board.title}-${fan.rank}`}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
+                          style={{ background: theme.gradient }}
+                        >
+                          {fan.rank}
+                        </span>
+
+                        <div>
+                          <p className="font-black">{fan.name}</p>
+                          <p className="text-xs text-white/40">{fan.badge}</p>
+                        </div>
+                      </div>
+
+                      <p
+                        className="bg-clip-text text-sm font-black text-transparent"
+                        style={{ backgroundImage: theme.text }}
+                      >
+                        {fan.metric}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <p className="text-sm leading-6 text-white/55">
+                    {board.reward}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
-
-          <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
-            <p className="text-sm leading-6 text-white/55">{board.reward}</p>
-          </div>
         </div>
-      ))}
-    </div>
-  </div>
-</section>
+      </section>
 
       <section className="relative z-10 mx-auto grid max-w-7xl gap-6 px-5 pb-20 md:grid-cols-2 md:px-8">
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
@@ -740,9 +1216,9 @@ export default function CreatorPage() {
                     className="flex h-10 w-10 items-center justify-center rounded-xl text-xl"
                     style={{ background: theme.softGradient }}
                   >
-                    ✦
+                    💎
                   </span>
-                  <p className="font-bold">{badge}</p>
+                  <p className="font-black text-white/80">{badge}</p>
                 </div>
                 <span className="text-sm text-white/35">Locked</span>
               </div>
@@ -750,27 +1226,100 @@ export default function CreatorPage() {
           </div>
         </div>
 
-        <div
-          className="rounded-[2rem] border border-white/10 p-6"
-          style={{ background: theme.softGradient }}
-        >
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/45">
-            Reward zone
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+            Creator world theme
           </p>
-          <h3 className="mt-3 text-3xl font-black">Top fans unlock moments</h3>
-          <p className="mt-4 leading-8 text-white/60">
-            Highest-ranked fans can unlock creator recognition, shoutout slots,
-            private moments, meetups, and brand rewards as the community grows.
-          </p>
+          <h3 className="mt-3 text-3xl font-black">Choose your vibe</h3>
 
-          <div className="mt-7 rounded-2xl border border-white/10 bg-black/25 p-5">
-            <p className="text-sm text-white/45">Current reward target</p>
-            <p className="mt-2 text-2xl font-black">
-              Top 5 fans enter the monthly recognition list
-            </p>
+          <div className="mt-7 grid gap-3">
+            {(Object.keys(themes) as ThemeKey[]).map((themeKey) => (
+              <button
+                key={themeKey}
+                onClick={() => changeTheme(themeKey)}
+                className="rounded-2xl border p-4 text-left transition hover:scale-[1.01]"
+                style={{
+                  borderColor:
+                    activeTheme === themeKey
+                      ? themes[themeKey].border
+                      : "rgba(255,255,255,0.1)",
+                  background:
+                    activeTheme === themeKey
+                      ? themes[themeKey].softGradient
+                      : "rgba(0,0,0,0.25)",
+                }}
+              >
+                <p className="font-black">{themes[themeKey].name}</p>
+                <p className="mt-1 text-sm text-white/40">
+                  Creator page color system
+                </p>
+              </button>
+            ))}
           </div>
         </div>
       </section>
+
+      {isPassportModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-5 backdrop-blur-xl">
+          <div
+            className="w-full max-w-lg rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-6"
+            style={{ boxShadow: `0 0 100px ${theme.glow}` }}
+          >
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+                  FanStreak Passport
+                </p>
+                <h3 className="mt-3 text-3xl font-black">
+                  Create your Passport Card
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setIsPassportModalOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/60 transition hover:bg-white/[0.08]"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
+              <label className="mb-2 block text-sm font-bold text-white/45">
+                Fan name on Passport
+              </label>
+
+              <input
+                value={passportFanName}
+                onChange={(event) => setPassportFanName(event.target.value)}
+                placeholder="Example: Aarav Sharma"
+                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-lg font-black text-white outline-none placeholder:text-white/25"
+              />
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-sm leading-6 text-white/45">
+                  Your QR-linked Passport page will show your fan identity,
+                  creator, streak status, fan level, and Passport badge.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={activatePassport}
+              className="mt-5 w-full rounded-2xl py-4 font-black text-white"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 45px ${theme.glow}`,
+              }}
+            >
+              Activate Passport — ₹99
+            </button>
+
+            <p className="mt-4 text-center text-sm text-white/35">
+              Payment integration will connect here after MVP approval.
+            </p>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-5 backdrop-blur-xl">
@@ -781,12 +1330,13 @@ export default function CreatorPage() {
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                  Confirm support
+                  Start FanStreak
                 </p>
                 <h3 className="mt-3 text-3xl font-black">
-                  Start your FanStreak
+                  Support {creatorProfile.name}
                 </h3>
               </div>
+
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/60 transition hover:bg-white/[0.08]"
@@ -796,37 +1346,25 @@ export default function CreatorPage() {
             </div>
 
             <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
-              <div className="flex items-center gap-4">
-                <div
-                  className="flex h-16 w-16 items-center justify-center rounded-2xl p-[2px]"
-                  style={{ background: theme.gradient }}
-                >
-                  <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[0.9rem] bg-[#101015] text-2xl font-black">
-                    {creatorProfile.profilePhoto ? (
-                      <img
-                        src={creatorProfile.profilePhoto}
-                        alt={creatorProfile.name}
-                        className="h-full w-full object-contain object-center"
-                      />
-                    ) : (
-                      creatorInitial
-                    )}
-                  </div>
-                </div>
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm text-white/45">Supporting</p>
-                  <p className="text-xl font-black">{creatorProfile.name}</p>
+                  <p className="text-sm text-white/45">Selected support</p>
+                  <div
+                    className="mt-1 bg-clip-text text-4xl font-black text-transparent"
+                    style={{ backgroundImage: theme.text }}
+                  >
+                    {finalAmount}
+                  </div>
+                  <p className="mt-2 text-sm font-black text-white/55">
+                    {selectedSupportTitle}
+                  </p>
                 </div>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
-                <p className="text-sm text-white/45">Selected support</p>
-                <p
-                  className="mt-1 bg-clip-text text-4xl font-black text-transparent"
-                  style={{ backgroundImage: theme.text }}
+                <div
+                  className="flex h-16 w-16 items-center justify-center rounded-2xl text-3xl"
+                  style={{ background: theme.softGradient }}
                 >
-                  {finalAmount}
-                </p>
+                  🔥
+                </div>
               </div>
             </div>
 
