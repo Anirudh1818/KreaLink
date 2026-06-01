@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
@@ -193,6 +193,13 @@ function normalizeUrl(value?: string) {
   return `https://${value}`;
 }
 
+function toDayKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function CreatorPage() {
   const params = useParams();
   const creatorUsername = getParamValue(params?.creator);
@@ -206,6 +213,12 @@ export default function CreatorPage() {
   const [customAmount, setCustomAmount] = useState("");
   const [isCustom, setIsCustom] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [supportFanName, setSupportFanName] = useState("");
+  const [isDailyMandate, setIsDailyMandate] = useState(false);
+  const [mandateConsent, setMandateConsent] = useState(false);
+  const [isProcessingSupport, setIsProcessingSupport] = useState(false);
+  const [supportError, setSupportError] = useState("");
 
   const [isPassportModalOpen, setIsPassportModalOpen] = useState(false);
   const [passportFanName, setPassportFanName] = useState("");
@@ -407,6 +420,84 @@ export default function CreatorPage() {
   function openSupportModal() {
     if (!canContinue) return;
     setIsModalOpen(true);
+  }
+
+  async function confirmSupport() {
+    const cleanFanName = supportFanName.trim();
+
+    if (!cleanFanName) {
+      setSupportError("Please enter your fan name.");
+      return;
+    }
+
+    if (isDailyMandate && !mandateConsent) {
+      setSupportError("Please agree to the daily support terms to continue.");
+      return;
+    }
+
+    try {
+      setIsProcessingSupport(true);
+      setSupportError("");
+
+      const fanSlug =
+        cleanFanName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "") || "fan";
+
+      const supportRef = doc(db, "supports", `${creatorProfile.username}__${fanSlug}`);
+      const existingSupport = await getDoc(supportRef);
+
+      const todayKey = toDayKey(new Date());
+      const yesterdayKey = toDayKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+      let streakDays = 1;
+
+      if (existingSupport.exists()) {
+        const data = existingSupport.data();
+        const lastDay = String(data.lastSupportDate || "");
+        const previousStreak = Number(data.streakDays || 0);
+
+        if (lastDay === todayKey) {
+          streakDays = previousStreak || 1;
+        } else if (lastDay === yesterdayKey) {
+          streakDays = previousStreak + 1;
+        } else {
+          streakDays = 1;
+        }
+      }
+
+      await setDoc(
+        supportRef,
+        {
+          creator: creatorProfile.username,
+          creatorName: creatorProfile.name,
+          fanName: cleanFanName,
+          fanSlug,
+          lastAmount: finalAmount,
+          frequency: isDailyMandate ? "daily" : "once",
+          mandateConsent: isDailyMandate,
+          lastSupportDate: todayKey,
+          streakDays,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      window.location.href = `/success?creator=${encodeURIComponent(
+        creatorProfile.username
+      )}&creatorName=${encodeURIComponent(
+        creatorProfile.name
+      )}&fanName=${encodeURIComponent(
+        cleanFanName
+      )}&streak=${streakDays}&amount=${encodeURIComponent(
+        finalAmount
+      )}&frequency=${isDailyMandate ? "daily" : "once"}`;
+    } catch (error) {
+      console.error("Failed to record support:", error);
+      setSupportError("Something went wrong. Please try again.");
+      setIsProcessingSupport(false);
+    }
   }
 
   function getPassportSlug() {
@@ -1368,21 +1459,118 @@ export default function CreatorPage() {
               </div>
             </div>
 
+            <div className="mt-5 rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
+              <label className="mb-2 block text-sm font-bold text-white/45">
+                Your fan name
+              </label>
+              <input
+                value={supportFanName}
+                onChange={(event) => setSupportFanName(event.target.value)}
+                placeholder="Example: Aarav Sharma"
+                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 font-black text-white outline-none placeholder:text-white/25 focus:border-white/25"
+              />
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDailyMandate(false)}
+                  className="rounded-2xl border px-4 py-3 text-left transition"
+                  style={{
+                    borderColor: !isDailyMandate
+                      ? theme.border
+                      : "rgba(255,255,255,0.1)",
+                    background: !isDailyMandate
+                      ? theme.softGradient
+                      : "rgba(0,0,0,0.25)",
+                  }}
+                >
+                  <p className="text-sm font-black">One-time</p>
+                  <p className="mt-1 text-xs text-white/45">Support once</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsDailyMandate(true)}
+                  className="rounded-2xl border px-4 py-3 text-left transition"
+                  style={{
+                    borderColor: isDailyMandate
+                      ? theme.border
+                      : "rgba(255,255,255,0.1)",
+                    background: isDailyMandate
+                      ? theme.softGradient
+                      : "rgba(0,0,0,0.25)",
+                  }}
+                >
+                  <p className="text-sm font-black">Daily streak</p>
+                  <p className="mt-1 text-xs text-white/45">Auto-support daily</p>
+                </button>
+              </div>
+            </div>
+
+            {isDailyMandate && (
+              <div className="mt-4 rounded-2xl border border-white/15 bg-black/30 p-5">
+                <p className="text-sm font-black uppercase tracking-[0.18em] text-white/45">
+                  Daily support mandate
+                </p>
+                <ul className="mt-3 space-y-2 text-sm leading-6 text-white/60">
+                  <li>
+                    • You authorize {finalAmount} per day to{" "}
+                    {creatorProfile.name} to keep your streak alive.
+                  </li>
+                  <li>
+                    • You will get a reminder before every debit, as required by
+                    RBI.
+                  </li>
+                  <li>
+                    • There is a monthly cap, and you can pause or cancel
+                    anytime.
+                  </li>
+                  <li>
+                    • Streaks and ranks still depend on real support — nothing is
+                    hidden.
+                  </li>
+                </ul>
+
+                <label className="mt-4 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={mandateConsent}
+                    onChange={(event) => setMandateConsent(event.target.checked)}
+                    className="mt-1 h-5 w-5 shrink-0 accent-pink-500"
+                  />
+                  <span className="text-sm leading-6 text-white/70">
+                    I understand and agree to the daily {finalAmount} support
+                    mandate.
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {supportError && (
+              <p className="mt-4 text-sm font-bold text-rose-300">
+                {supportError}
+              </p>
+            )}
+
             <button
-              onClick={() => {
-                window.location.href = "/success";
-              }}
-              className="mt-5 w-full rounded-2xl py-4 font-black text-white"
+              onClick={confirmSupport}
+              disabled={isProcessingSupport}
+              className="mt-5 w-full rounded-2xl py-4 font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
               style={{
                 background: theme.gradient,
                 boxShadow: `0 0 45px ${theme.glow}`,
               }}
             >
-              Proceed to payment
+              {isProcessingSupport
+                ? "Activating..."
+                : isDailyMandate
+                ? `Authorize daily ${finalAmount} & start streak`
+                : `Pay ${finalAmount} & start streak`}
             </button>
 
             <p className="mt-4 text-center text-sm text-white/35">
-              Payment integration will connect here after MVP UI approval.
+              Secure UPI mandate gateway connects here. Your consent is recorded
+              now; no money moves until the gateway is live.
             </p>
           </div>
         </div>

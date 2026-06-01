@@ -116,7 +116,13 @@ export default function AdminPage() {
   const [creatorUsername, setCreatorUsername] = useState("");
   const [creatorCategory, setCreatorCategory] = useState("");
 
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState("");
+  const [passcodeError, setPasscodeError] = useState("");
+
   const theme = themes[activeTheme];
+
+  const configuredPasscode = process.env.NEXT_PUBLIC_ADMIN_PASSCODE;
 
   const stats = useMemo(
     () => [
@@ -151,6 +157,33 @@ if (isThemeKey(savedTheme)) {
   setActiveTheme(savedTheme);
 }
   }, []);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("fanstreak-admin-unlocked") === "true") {
+      setAdminUnlocked(true);
+    }
+  }, []);
+
+  function unlockAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!configuredPasscode) {
+      setPasscodeError(
+        "Admin passcode is not configured. Set NEXT_PUBLIC_ADMIN_PASSCODE in your environment."
+      );
+      return;
+    }
+
+    if (passcodeInput === configuredPasscode) {
+      sessionStorage.setItem("fanstreak-admin-unlocked", "true");
+      setAdminUnlocked(true);
+      setPasscodeInput("");
+      setPasscodeError("");
+      return;
+    }
+
+    setPasscodeError("Incorrect passcode.");
+  }
 
   useEffect(() => {
   async function loadCreatorsFromFirestore() {
@@ -292,6 +325,70 @@ alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
   function saveCommission() {
     setIsCommissionOpen(false);
     alert(`Commission rate saved as ${commission}% for demo.`);
+  }
+
+  if (!adminUnlocked) {
+    return (
+      <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#050508] px-5 text-white">
+        <div className="pointer-events-none fixed inset-0">
+          <div
+            className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
+            style={{ background: theme.glow }}
+          />
+        </div>
+
+        <form
+          onSubmit={unlockAdmin}
+          className="relative z-10 w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-7"
+          style={{ boxShadow: `0 0 100px ${theme.glow}` }}
+        >
+          <div
+            className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border bg-white/5 text-2xl"
+            style={{
+              borderColor: theme.border,
+              boxShadow: `0 0 30px ${theme.glow}`,
+            }}
+          >
+            🔒
+          </div>
+
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+            Admin access
+          </p>
+          <h1 className="mt-3 text-3xl font-black">Enter admin passcode</h1>
+          <p className="mt-3 text-sm leading-6 text-white/45">
+            This dashboard controls creators, payouts, and commission. Access is
+            restricted.
+          </p>
+
+          <input
+            value={passcodeInput}
+            onChange={(event) => setPasscodeInput(event.target.value)}
+            type="password"
+            placeholder="Passcode"
+            autoFocus
+            className="mt-6 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 font-bold text-white outline-none placeholder:text-white/25 focus:border-white/25"
+          />
+
+          {passcodeError && (
+            <p className="mt-3 text-sm font-bold text-rose-300">
+              {passcodeError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="mt-5 w-full rounded-2xl py-4 font-black text-white"
+            style={{
+              background: theme.gradient,
+              boxShadow: `0 0 40px ${theme.glow}`,
+            }}
+          >
+            Unlock dashboard
+          </button>
+        </form>
+      </main>
+    );
   }
 
   return (

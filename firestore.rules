@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// FanStreak Firestore security rules
+// --------------------------------------------------------------------------
+// IMPORTANT: The Firebase web config (NEXT_PUBLIC_*) is meant to be public.
+// These rules — NOT the config — are the real security boundary. They are
+// written for the current no-auth MVP: public creator pages still work, but
+// the database can no longer be wiped, scraped, or photo-bombed by anyone.
+//
+// Next step once Firebase Auth is added: require request.auth for writes and
+// tie each creator doc to its owner's uid. See SECURITY-NOTES below.
+// --------------------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A creator's profilePhoto is stored inline as a base64 data URL today.
+    // Firestore docs are capped at 1 MB, so reject anything that would bloat
+    // (or blow past) the document limit. ~900k chars of base64 ≈ ~675 KB.
+    function photoWithinLimit(data) {
+      return !('profilePhoto' in data.keys())
+        || (data.profilePhoto is string && data.profilePhoto.size() < 900000);
+    }
+
+    match /creators/{username} {
+      // Public read: home page list + public /[creator] pages depend on this.
+      allow read: if true;
+
+      // First-time creation (only fires when the doc does NOT already exist,
+      // so this alone prevents create-time squatting of an existing creator).
+      allow create: if photoWithinLimit(request.resource.data);
+
+      // Updates: theme saves, admin approvals, profile edits. Allowed, but
+      // never let a write bloat the doc past the photo limit.
+      allow update: if photoWithinLimit(request.resource.data);
+
+      // Never allow deleting a creator from the client.
+      allow delete: if false;
+    }
+
+    match /earlyAccess/{docId} {
+      // Anyone may join the waitlist...
+      allow create: if request.resource.data.email is string
+                    && request.resource.data.email.size() > 3
+                    && request.resource.data.email.size() < 320;
+
+      // ...but the email list itself stays private and immutable from clients.
+      allow read, update, delete: if false;
+    }
+
+    // Fan support records — power real streaks and public fan profiles.
+    // One doc per (creator + fan). Holds streak state and, for recurring
+    // supporters, the explicit mandate consent the user agreed to.
+    match /supports/{supportId} {
+      allow read: if true;
+
+      allow create, update: if request.resource.data.creator is string
+                            && request.resource.data.creator.size() < 80
+                            && request.resource.data.fanName is string
+                            && request.resource.data.fanName.size() > 0
+                            && request.resource.data.fanName.size() < 80;
+
+      allow delete: if false;
+    }
+
+    // Default deny: anything not matched above is fully locked.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

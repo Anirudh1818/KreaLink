@@ -25,8 +25,20 @@ const unlockedItems = [
 export default function SuccessPage() {
   const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
   const [copied, setCopied] = useState(false);
+  const [support, setSupport] = useState({
+    creator: "",
+    creatorName: "",
+    fanName: "",
+    streak: "1",
+    frequency: "once",
+    amount: "",
+  });
 
   const theme = themes[activeTheme];
+
+  const creatorLink = support.creator ? `/${support.creator}` : "/";
+  const creatorLabel = support.creatorName || "your creator";
+  const isDaily = support.frequency === "daily";
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("fanstreak-theme");
@@ -36,9 +48,22 @@ if (isThemeKey(savedTheme)) {
 }
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    setSupport({
+      creator: params.get("creator") || "",
+      creatorName: params.get("creatorName") || "",
+      fanName: params.get("fanName") || "",
+      streak: params.get("streak") || "1",
+      frequency: params.get("frequency") || "once",
+      amount: params.get("amount") || "",
+    });
+  }, []);
+
   async function copyShareText() {
-    const text =
-      "I just started my FanStreak for Samay Raina 🔥 fanstreak.in/samay";
+    const creatorHandle = support.creator || "fanstreak";
+    const text = `I just started my FanStreak for ${creatorLabel} 🔥 fanstreak.in/${creatorHandle}`;
 
     try {
       await navigator.clipboard.writeText(text);
@@ -93,7 +118,7 @@ if (isThemeKey(savedTheme)) {
           </a>
 
           <a
-            href="/samay"
+            href={creatorLink}
             className="rounded-2xl px-5 py-3 text-sm font-bold text-white"
             style={{
               background: theme.gradient,
@@ -156,8 +181,8 @@ if (isThemeKey(savedTheme)) {
               </h2>
 
               <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/55 md:text-xl">
-                You are now inside Samay Raina’s fan community. Keep your streak
-                alive, climb the leaderboard, and build your fan identity.
+                You are now inside {creatorLabel}’s fan community. Keep your
+                streak alive, climb the leaderboard, and build your fan identity.
               </p>
 
               <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -166,7 +191,7 @@ if (isThemeKey(savedTheme)) {
                     className="bg-clip-text text-4xl font-black text-transparent"
                     style={{ backgroundImage: theme.text }}
                   >
-                    Day 1
+                    Day {support.streak}
                   </p>
                   <p className="mt-2 text-sm font-bold text-white/45">
                     Current streak
@@ -229,11 +254,18 @@ if (isThemeKey(savedTheme)) {
                   Every new support keeps your FanStreak alive and pushes your
                   name higher inside the fandom.
                 </p>
+                {isDaily && (
+                  <p className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm leading-7 text-white/55">
+                    Daily support is active{support.amount ? ` (${support.amount}/day)` : ""}.
+                    You will get a reminder before each debit and can pause or
+                    cancel anytime from your fan profile.
+                  </p>
+                )}
               </div>
 
               <div className="mt-10 flex flex-col gap-4 sm:flex-row">
                 <a
-                  href="/samay"
+                  href={creatorLink}
                   className="flex-1 rounded-2xl py-4 text-center font-black text-white"
                   style={{
                     background: theme.gradient,

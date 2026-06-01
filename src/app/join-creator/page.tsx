@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
@@ -48,6 +48,15 @@ export default function JoinCreatorPage() {
       return;
     }
 
+    // Photos are stored inline in the Firestore doc (1 MB hard limit), and
+    // base64 inflates size by ~33%. Keep originals comfortably under that.
+    const maxPhotoBytes = 600 * 1024;
+
+    if (file.size > maxPhotoBytes) {
+      setMessage("Please upload an image under 600KB.");
+      return;
+    }
+
     const reader = new FileReader();
 
     reader.onload = () => {
@@ -78,6 +87,14 @@ export default function JoinCreatorPage() {
     try {
       setIsCreating(true);
       setMessage("");
+
+      // Don't silently overwrite an existing creator (username squatting).
+      const existingCreator = await getDoc(doc(db, "creators", finalUsername));
+
+      if (existingCreator.exists()) {
+        setMessage("That username is already taken. Please choose another.");
+        return;
+      }
 
       await setDoc(doc(db, "creators", finalUsername), {
         name: finalName,
