@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 
@@ -200,6 +209,13 @@ function toDayKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function streakBadge(days: number) {
+  if (days >= 100) return "Streak King";
+  if (days >= 30) return "Daily Fan";
+  if (days >= 7) return "Consistent Fan";
+  return "Rising Streak";
+}
+
 export default function CreatorPage() {
   const params = useParams();
   const creatorUsername = getParamValue(params?.creator);
@@ -208,6 +224,7 @@ export default function CreatorPage() {
     useState<CreatorProfile>(fallbackStudioCreator);
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
+  const [liveStreakFans, setLiveStreakFans] = useState<LeaderboardFan[]>([]);
 
   const [selectedAmount, setSelectedAmount] = useState("₹49");
   const [customAmount, setCustomAmount] = useState("");
@@ -341,6 +358,44 @@ export default function CreatorPage() {
     }
 
     loadCreator();
+  }, [creatorUsername]);
+
+  useEffect(() => {
+    if (!creatorUsername) return;
+
+    async function loadStreakLeaderboard() {
+      try {
+        const supportsQuery = query(
+          collection(db, "supports"),
+          where("creator", "==", creatorUsername)
+        );
+        const snapshot = await getDocs(supportsQuery);
+
+        const fans: LeaderboardFan[] = snapshot.docs
+          .map((supportDoc) => {
+            const data = supportDoc.data();
+            return {
+              name: String(data.fanName || "Fan"),
+              streakDays: Number(data.streakDays || 0),
+            };
+          })
+          .sort((a, b) => b.streakDays - a.streakDays)
+          .slice(0, 4)
+          .map((fan, index) => ({
+            rank: (["01", "02", "03", "04"][index] ||
+              "04") as LeaderboardFan["rank"],
+            name: fan.name,
+            badge: streakBadge(fan.streakDays),
+            metric: `${fan.streakDays} day${fan.streakDays === 1 ? "" : "s"}`,
+          }));
+
+        setLiveStreakFans(fans);
+      } catch (error) {
+        console.error("Failed to load streak leaderboard:", error);
+      }
+    }
+
+    loadStreakLeaderboard();
   }, [creatorUsername]);
 
   useEffect(() => {
@@ -1235,7 +1290,13 @@ export default function CreatorPage() {
           </div>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-3">
-            {leaderboardSets.map((board) => (
+            {leaderboardSets.map((board) => {
+              const boardFans =
+                board.title.includes("Highest Streak") && liveStreakFans.length
+                  ? liveStreakFans
+                  : board.fans;
+
+              return (
               <div
                 key={board.title}
                 className="rounded-[2rem] border border-white/10 bg-black/25 p-5"
@@ -1249,7 +1310,7 @@ export default function CreatorPage() {
                 </p>
 
                 <div className="mt-6 space-y-3">
-                  {board.fans.map((fan) => (
+                  {boardFans.map((fan) => (
                     <div
                       key={`${board.title}-${fan.rank}`}
                       className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
@@ -1284,7 +1345,8 @@ export default function CreatorPage() {
                   </p>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
