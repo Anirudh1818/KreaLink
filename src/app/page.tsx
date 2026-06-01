@@ -211,6 +211,9 @@ export default function Home() {
             <a className="transition hover:text-white" href="#how">
               How it works
             </a>
+            <a className="transition hover:text-white" href="/me">
+              Account
+            </a>
           </div>
 
           <a

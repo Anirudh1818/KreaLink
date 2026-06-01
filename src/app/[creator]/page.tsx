@@ -703,16 +703,24 @@ export default function CreatorPage() {
             </div>
           </a>
 
-          <a
-            href="#support"
-            className="rounded-2xl px-5 py-3 text-sm font-bold text-white"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 35px ${theme.glow}`,
-            }}
-          >
-            Support
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href={user ? "/me" : loginHref}
+              className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/65 transition hover:bg-white/[0.08]"
+            >
+              {user ? "My profile" : "Sign in"}
+            </a>
+            <a
+              href="#support"
+              className="rounded-2xl px-5 py-3 text-sm font-bold text-white"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 35px ${theme.glow}`,
+              }}
+            >
+              Support
+            </a>
+          </div>
         </nav>
       </header>
 

@@ -2,8 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { collection, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useAuth } from "@/lib/auth-context";
 
 
 type CreatorStatus = "Live" | "Pending" | "Review";
@@ -116,13 +118,18 @@ export default function AdminPage() {
   const [creatorUsername, setCreatorUsername] = useState("");
   const [creatorCategory, setCreatorCategory] = useState("");
 
-  const [adminUnlocked, setAdminUnlocked] = useState(false);
-  const [passcodeInput, setPasscodeInput] = useState("");
-  const [passcodeError, setPasscodeError] = useState("");
+  const { user, loading: authLoading } = useAuth();
 
   const theme = themes[activeTheme];
 
-  const configuredPasscode = process.env.NEXT_PUBLIC_ADMIN_PASSCODE;
+  const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+
+  const isAdmin = Boolean(
+    user?.email && adminEmails.includes(user.email.toLowerCase())
+  );
 
   const stats = useMemo(
     () => [
@@ -157,33 +164,6 @@ if (isThemeKey(savedTheme)) {
   setActiveTheme(savedTheme);
 }
   }, []);
-
-  useEffect(() => {
-    if (sessionStorage.getItem("fanstreak-admin-unlocked") === "true") {
-      setAdminUnlocked(true);
-    }
-  }, []);
-
-  function unlockAdmin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!configuredPasscode) {
-      setPasscodeError(
-        "Admin passcode is not configured. Set NEXT_PUBLIC_ADMIN_PASSCODE in your environment."
-      );
-      return;
-    }
-
-    if (passcodeInput === configuredPasscode) {
-      sessionStorage.setItem("fanstreak-admin-unlocked", "true");
-      setAdminUnlocked(true);
-      setPasscodeInput("");
-      setPasscodeError("");
-      return;
-    }
-
-    setPasscodeError("Incorrect passcode.");
-  }
 
   useEffect(() => {
   async function loadCreatorsFromFirestore() {
@@ -327,7 +307,15 @@ alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
     alert(`Commission rate saved as ${commission}% for demo.`);
   }
 
-  if (!adminUnlocked) {
+  if (authLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
+        <p className="text-white/55">Checking access...</p>
+      </main>
+    );
+  }
+
+  if (!user || !isAdmin) {
     return (
       <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#050508] px-5 text-white">
         <div className="pointer-events-none fixed inset-0">
@@ -337,13 +325,12 @@ alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
           />
         </div>
 
-        <form
-          onSubmit={unlockAdmin}
-          className="relative z-10 w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-7"
+        <div
+          className="relative z-10 w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-7 text-center"
           style={{ boxShadow: `0 0 100px ${theme.glow}` }}
         >
           <div
-            className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border bg-white/5 text-2xl"
+            className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border bg-white/5 text-2xl"
             style={{
               borderColor: theme.border,
               boxShadow: `0 0 30px ${theme.glow}`,
@@ -355,38 +342,38 @@ alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
           <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
             Admin access
           </p>
-          <h1 className="mt-3 text-3xl font-black">Enter admin passcode</h1>
-          <p className="mt-3 text-sm leading-6 text-white/45">
-            This dashboard controls creators, payouts, and commission. Access is
-            restricted.
-          </p>
+          <h1 className="mt-3 text-3xl font-black">Restricted area</h1>
 
-          <input
-            value={passcodeInput}
-            onChange={(event) => setPasscodeInput(event.target.value)}
-            type="password"
-            placeholder="Passcode"
-            autoFocus
-            className="mt-6 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 font-bold text-white outline-none placeholder:text-white/25 focus:border-white/25"
-          />
-
-          {passcodeError && (
-            <p className="mt-3 text-sm font-bold text-rose-300">
-              {passcodeError}
-            </p>
+          {!user ? (
+            <>
+              <p className="mt-3 text-sm leading-6 text-white/45">
+                Sign in with an admin account to open the dashboard.
+              </p>
+              <a
+                href="/login?next=/admin"
+                className="mt-6 inline-block w-full rounded-2xl py-4 font-black text-white"
+                style={{
+                  background: theme.gradient,
+                  boxShadow: `0 0 40px ${theme.glow}`,
+                }}
+              >
+                Sign in
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm leading-6 text-white/45">
+                {user.email} is not an admin account.
+              </p>
+              <button
+                onClick={() => signOut(auth)}
+                className="mt-6 w-full rounded-2xl border border-white/10 bg-white/[0.04] py-4 font-black text-white/70 transition hover:bg-white/[0.08]"
+              >
+                Sign out
+              </button>
+            </>
           )}
-
-          <button
-            type="submit"
-            className="mt-5 w-full rounded-2xl py-4 font-black text-white"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 40px ${theme.glow}`,
-            }}
-          >
-            Unlock dashboard
-          </button>
-        </form>
+        </div>
       </main>
     );
   }
@@ -447,6 +434,12 @@ alert(`Creator profile saved to Firestore: fanstreak.in/${cleanUsername}`);
             >
               View Demo
             </a>
+            <button
+              onClick={() => signOut(auth)}
+              className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/65 transition hover:bg-white/[0.08]"
+            >
+              Sign out
+            </button>
           </div>
         </nav>
       </header>
