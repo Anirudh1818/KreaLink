@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useAuth } from "@/lib/auth-context";
 
 const features = [
   {
@@ -67,6 +68,7 @@ const leaderboard = [
 ];
 
 export default function Home() {
+  const { user } = useAuth();
   const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
   const [creators, setCreators] = useState<HomeCreator[]>(fallbackCreators);
   const [waitlistEmail, setWaitlistEmail] = useState("");
@@ -211,21 +213,26 @@ export default function Home() {
             <a className="transition hover:text-white" href="#how">
               How it works
             </a>
-            <a className="transition hover:text-white" href="/me">
-              Account
-            </a>
           </div>
 
-          <a
-            href="#early-access"
-            className="rounded-2xl px-5 py-3 text-sm font-bold text-white transition hover:scale-[1.02]"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 35px ${theme.glow}`,
-            }}
-          >
-            Get Started
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href={user ? "/me" : "/login"}
+              className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/70 transition hover:bg-white/[0.08]"
+            >
+              {user ? "Account" : "Sign in"}
+            </a>
+            <a
+              href="#early-access"
+              className="rounded-2xl px-5 py-3 text-sm font-bold text-white transition hover:scale-[1.02]"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 35px ${theme.glow}`,
+              }}
+            >
+              Get Started
+            </a>
+          </div>
         </nav>
       </header>
 
