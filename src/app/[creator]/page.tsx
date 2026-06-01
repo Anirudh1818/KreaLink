@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useAuth } from "@/lib/auth-context";
 
 const supportLevels = [
   {
@@ -218,7 +219,10 @@ function streakBadge(days: number) {
 
 export default function CreatorPage() {
   const params = useParams();
+  const { user } = useAuth();
   const creatorUsername = getParamValue(params?.creator);
+
+  const loginHref = `/login?next=${encodeURIComponent(`/${creatorUsername}`)}`;
 
   const [creatorProfile, setCreatorProfile] =
     useState<CreatorProfile>(fallbackStudioCreator);
@@ -407,6 +411,12 @@ export default function CreatorPage() {
   }, []);
 
   useEffect(() => {
+    if (user && !supportFanName) {
+      setSupportFanName(user.displayName || user.email?.split("@")[0] || "");
+    }
+  }, [user, supportFanName]);
+
+  useEffect(() => {
     const passportKey = `fanstreak-passport-active-${creatorUsername}`;
     const passportNameKey = `fanstreak-passport-name-${creatorUsername}`;
 
@@ -478,6 +488,11 @@ export default function CreatorPage() {
   }
 
   async function confirmSupport() {
+    if (!user) {
+      setSupportError("Please sign in to start your streak.");
+      return;
+    }
+
     const cleanFanName = supportFanName.trim();
 
     if (!cleanFanName) {
@@ -500,7 +515,11 @@ export default function CreatorPage() {
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/(^-|-$)/g, "") || "fan";
 
-      const supportRef = doc(db, "supports", `${creatorProfile.username}__${fanSlug}`);
+      const supportRef = doc(
+        db,
+        "supports",
+        `${creatorProfile.username}__${user.uid}`
+      );
       const existingSupport = await getDoc(supportRef);
 
       const todayKey = toDayKey(new Date());
@@ -527,6 +546,7 @@ export default function CreatorPage() {
         {
           creator: creatorProfile.username,
           creatorName: creatorProfile.name,
+          fanUid: user.uid,
           fanName: cleanFanName,
           fanSlug,
           lastAmount: finalAmount,
@@ -1521,6 +1541,27 @@ export default function CreatorPage() {
               </div>
             </div>
 
+            {!user && (
+              <div className="mt-5 rounded-2xl border border-white/15 bg-black/30 p-5 text-center">
+                <p className="text-sm leading-6 text-white/60">
+                  Sign in to start your streak. Your streak is tied to your
+                  account, so your rank is really yours.
+                </p>
+                <a
+                  href={loginHref}
+                  className="mt-4 inline-block w-full rounded-2xl py-4 font-black text-white"
+                  style={{
+                    background: theme.gradient,
+                    boxShadow: `0 0 45px ${theme.glow}`,
+                  }}
+                >
+                  Sign in to continue
+                </a>
+              </div>
+            )}
+
+            {user && (
+              <>
             <div className="mt-5 rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
               <label className="mb-2 block text-sm font-bold text-white/45">
                 Your fan name
@@ -1634,6 +1675,8 @@ export default function CreatorPage() {
               Secure UPI mandate gateway connects here. Your consent is recorded
               now; no money moves until the gateway is live.
             </p>
+              </>
+            )}
           </div>
         </div>
       )}

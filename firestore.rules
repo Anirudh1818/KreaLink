@@ -54,7 +54,11 @@ service cloud.firestore {
     match /supports/{supportId} {
       allow read: if true;
 
-      allow create, update: if request.resource.data.creator is string
+      // A signed-in fan may only write their OWN support/streak doc — the
+      // doc must carry their uid. This is what makes streaks trustworthy.
+      allow create, update: if request.auth != null
+                            && request.auth.uid == request.resource.data.fanUid
+                            && request.resource.data.creator is string
                             && request.resource.data.creator.size() < 80
                             && request.resource.data.fanName is string
                             && request.resource.data.fanName.size() > 0
