@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { isThemeKey, themes, type FanStreakTheme, type ThemeKey } from "@/lib/themes";
 import { useAuth } from "@/lib/auth-context";
 
 const features = [
@@ -38,7 +38,57 @@ type HomeCreator = {
   username: string;
   category: string;
   supporters: string;
+  profilePhoto: string;
 };
+
+function CollageTile({
+  creator,
+  theme,
+  delay,
+  rotate,
+}: {
+  creator: HomeCreator;
+  theme: FanStreakTheme;
+  delay: number;
+  rotate: number;
+}) {
+  const initial = creator.name.trim().charAt(0).toUpperCase() || "F";
+
+  return (
+    <div
+      className="relative h-44 w-36 overflow-hidden rounded-[1.6rem] border border-white/10 opacity-70 shadow-2xl"
+      style={{
+        transform: `rotate(${rotate}deg)`,
+        animation: `fsFloat ${6 + delay}s ease-in-out ${delay}s infinite`,
+        boxShadow: `0 0 40px ${theme.glow}`,
+      }}
+    >
+      {creator.profilePhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={creator.profilePhoto}
+          alt={creator.name}
+          className="h-full w-full object-cover"
+          style={{ animation: `fsKen ${10 + delay}s ease-in-out alternate infinite` }}
+        />
+      ) : (
+        <div
+          className="flex h-full w-full items-center justify-center text-4xl font-black text-white/85"
+          style={{ background: theme.gradient }}
+        >
+          {initial}
+        </div>
+      )}
+
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
+        <p className="truncate text-xs font-black text-white/90">{creator.name}</p>
+        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-white/60">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> LIVE
+        </span>
+      </div>
+    </div>
+  );
+}
 
 const fallbackCreators: HomeCreator[] = [
   {
@@ -46,18 +96,21 @@ const fallbackCreators: HomeCreator[] = [
     username: "samay",
     category: "Comedy Creator",
     supporters: "21.2K",
+    profilePhoto: "",
   },
   {
     name: "Maya Fit",
     username: "mayafit",
     category: "Fitness Creator",
     supporters: "6.8K",
+    profilePhoto: "",
   },
   {
     name: "Aarav Live",
     username: "aaravlive",
     category: "Streamer",
     supporters: "12.4K",
+    profilePhoto: "",
   },
 ];
 
@@ -74,6 +127,7 @@ export default function Home() {
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [waitlistMessage, setWaitlistMessage] = useState("");
+  const [showSplash, setShowSplash] = useState(true);
 
   const theme = themes[activeTheme];
 
@@ -83,6 +137,20 @@ export default function Home() {
     if (isThemeKey(savedTheme)) {
       setActiveTheme(savedTheme);
     }
+  }, []);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("fanstreak-splash-seen") === "true") {
+      setShowSplash(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      sessionStorage.setItem("fanstreak-splash-seen", "true");
+      setShowSplash(false);
+    }, 2600);
+
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -102,6 +170,7 @@ export default function Home() {
           username: String(data.username || creatorDoc.id),
           category: String(data.category || "Creator"),
           supporters: String(data.supporters || "0"),
+          profilePhoto: String(data.profilePhoto || ""),
         };
       });
 
@@ -161,8 +230,54 @@ export default function Home() {
   const featuredInitial =
     featuredCreator.name.trim().charAt(0).toUpperCase() || "C";
 
+  const collagePool = creators.length ? creators : fallbackCreators;
+  const collageSix = Array.from(
+    { length: 6 },
+    (_, index) => collagePool[index % collagePool.length]
+  );
+  const leftTiles = collageSix.filter((_, index) => index % 2 === 0);
+  const rightTiles = collageSix.filter((_, index) => index % 2 === 1);
+
   return (
     <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
+      <style>{`
+        @keyframes fsSplashIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+        @keyframes fsSplashOut { to { opacity: 0; visibility: hidden; } }
+        @keyframes fsFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+        @keyframes fsKen { 0% { transform: scale(1); } 100% { transform: scale(1.14); } }
+      `}</style>
+
+      {showSplash && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-[#050508]"
+          style={{ animation: "fsSplashOut 0.6s ease 2s forwards" }}
+        >
+          <div
+            className="flex flex-col items-center"
+            style={{ animation: "fsSplashIn 0.7s ease" }}
+          >
+            <div
+              className="flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/10"
+              style={{
+                background: theme.gradient,
+                boxShadow: `0 0 90px ${theme.glow}`,
+              }}
+            >
+              <span className="text-5xl">🔥</span>
+            </div>
+            <h1
+              className="mt-6 bg-clip-text text-5xl font-black tracking-tight text-transparent"
+              style={{ backgroundImage: theme.text }}
+            >
+              FanStreak
+            </h1>
+            <p className="mt-3 text-sm font-bold uppercase tracking-[0.3em] text-white/40">
+              Creator fandom &amp; status
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none fixed inset-0">
         <div
           className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
@@ -237,7 +352,35 @@ export default function Home() {
       </header>
 
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
-        <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
+        <div className="pointer-events-none absolute inset-0 hidden overflow-hidden lg:block">
+          <div className="absolute left-0 top-1/2 flex -translate-y-1/2 flex-col gap-6 pl-2 xl:pl-6">
+            {leftTiles.map((creator, index) => (
+              <CollageTile
+                key={`left-${creator.username}-${index}`}
+                creator={creator}
+                theme={theme}
+                delay={index * 0.7}
+                rotate={-6 + index * 3}
+              />
+            ))}
+          </div>
+
+          <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col gap-6 pr-2 xl:pr-6">
+            {rightTiles.map((creator, index) => (
+              <CollageTile
+                key={`right-${creator.username}-${index}`}
+                creator={creator}
+                theme={theme}
+                delay={0.4 + index * 0.7}
+                rotate={6 - index * 3}
+              />
+            ))}
+          </div>
+
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(5,5,8,0.82)_26%,rgba(5,5,8,0.82)_74%,transparent)]" />
+        </div>
+
+        <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">
           <div className="mb-7 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/65 shadow-2xl">
             <span className="mr-2">✦</span>
             FanStreak.in · creator fandom, status, and recognition
@@ -271,25 +414,6 @@ export default function Home() {
             rank, badge, and fan status.
           </p>
 
-          <div className="mt-10 flex w-full max-w-xl flex-col gap-4 sm:flex-row">
-            <a
-              href="#creators"
-              className="flex-1 rounded-2xl px-7 py-4 text-base font-black text-white transition hover:scale-[1.02]"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 45px ${theme.glow}`,
-              }}
-            >
-              Explore creators →
-            </a>
-        <a
-  href="/join-creator"
-  className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
->
-  Join as Creator
-</a>
-          </div>
-
           <div className="mt-8 flex flex-wrap justify-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-white/40">
             {["Streaks", "Rankings", "Badges", "Recognition"].map((item) => (
               <span
@@ -301,52 +425,6 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="mt-10 w-full rounded-[2rem] border border-white/10 bg-black/25 p-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-left">
-                <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                  Theme switcher
-                </p>
-                <p className="mt-2 text-lg font-black">
-                  Choose your FanStreak look
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                {(Object.keys(themes) as ThemeKey[]).map((key) => {
-                  const item = themes[key];
-                  const active = activeTheme === key;
-
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => changeTheme(key)}
-                      className={`rounded-2xl border px-4 py-3 text-left transition ${
-                        active
-                          ? "bg-white/[0.09] text-white"
-                          : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
-                      }`}
-                      style={{
-                        borderColor: active ? item.border : undefined,
-                        boxShadow: active ? `0 0 25px ${item.glow}` : undefined,
-                      }}
-                    >
-                      <span
-                        className="mb-2 block h-3 w-full rounded-full"
-                        style={{ background: item.gradient }}
-                      />
-                      <span className="block text-sm font-black">
-                        {item.name}
-                      </span>
-                      <span className="text-xs text-white/35">
-                        {item.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -670,6 +748,77 @@ export default function Home() {
               {waitlistMessage}
             </p>
           )}
+        </div>
+      </section>
+
+      <section className="relative z-10 mx-auto max-w-5xl px-5 pb-16 text-center md:px-8">
+        <p className="text-sm font-black uppercase tracking-[0.25em] text-white/40">
+          Get started
+        </p>
+        <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">
+          Jump in or make it your own
+        </h2>
+
+        <div className="mx-auto mt-8 flex w-full max-w-xl flex-col gap-4 sm:flex-row">
+          <a
+            href="#creators"
+            className="flex-1 rounded-2xl px-7 py-4 text-base font-black text-white transition hover:scale-[1.02]"
+            style={{
+              background: theme.gradient,
+              boxShadow: `0 0 45px ${theme.glow}`,
+            }}
+          >
+            Explore creators →
+          </a>
+          <a
+            href="/join-creator"
+            className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
+          >
+            Join as Creator
+          </a>
+        </div>
+
+        <div className="mt-10 w-full rounded-[2rem] border border-white/10 bg-black/25 p-4 text-left">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="text-left">
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+                Theme switcher
+              </p>
+              <p className="mt-2 text-lg font-black">
+                Choose your FanStreak look
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {(Object.keys(themes) as ThemeKey[]).map((key) => {
+                const item = themes[key];
+                const active = activeTheme === key;
+
+                return (
+                  <button
+                    key={key}
+                    onClick={() => changeTheme(key)}
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                      active
+                        ? "bg-white/[0.09] text-white"
+                        : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
+                    }`}
+                    style={{
+                      borderColor: active ? item.border : undefined,
+                      boxShadow: active ? `0 0 25px ${item.glow}` : undefined,
+                    }}
+                  >
+                    <span
+                      className="mb-2 block h-3 w-full rounded-full"
+                      style={{ background: item.gradient }}
+                    />
+                    <span className="block text-sm font-black">{item.name}</span>
+                    <span className="text-xs text-white/35">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
 
