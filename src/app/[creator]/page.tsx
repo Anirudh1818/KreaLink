@@ -229,6 +229,7 @@ export default function CreatorPage() {
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
   const [liveStreakFans, setLiveStreakFans] = useState<LeaderboardFan[]>([]);
+  const [openBoard, setOpenBoard] = useState(0);
 
   const [selectedAmount, setSelectedAmount] = useState("₹49");
   const [customAmount, setCustomAmount] = useState("");
@@ -891,6 +892,230 @@ export default function CreatorPage() {
         </div>
       </section>
 
+      {/* Fan leaderboards — tap to expand */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+              Fan competition
+            </p>
+            <h3 className="mt-3 text-4xl font-black md:text-5xl">
+              Three ways to become visible
+            </h3>
+            <p className="mt-4 text-lg leading-8 text-white/50">
+              Climb through streaks, loyalty, or support value. Tap a board to
+              see who is leading right now.
+            </p>
+          </div>
+
+          <div className="mt-8 space-y-3">
+            {leaderboardSets.map((board, index) => {
+              const isOpen = openBoard === index;
+              const boardFans =
+                board.title.includes("Highest Streak") && liveStreakFans.length
+                  ? liveStreakFans
+                  : board.fans;
+
+              return (
+                <div
+                  key={board.title}
+                  className="overflow-hidden rounded-[2rem] border border-white/10 bg-black/25"
+                  style={{
+                    borderColor: isOpen ? theme.border : undefined,
+                    boxShadow: isOpen ? `0 0 35px ${theme.glow}` : undefined,
+                  }}
+                >
+                  <button
+                    onClick={() => setOpenBoard(isOpen ? -1 : index)}
+                    className="flex w-full items-center justify-between gap-4 p-5 text-left transition hover:bg-white/[0.03]"
+                  >
+                    <div>
+                      <h4 className="text-2xl font-black md:text-3xl">
+                        {board.title}
+                      </h4>
+                      <p className="mt-1 text-sm text-white/45">
+                        {board.subtitle}
+                      </p>
+                    </div>
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-lg transition-transform duration-300"
+                      style={{
+                        background: isOpen
+                          ? theme.gradient
+                          : "rgba(255,255,255,0.04)",
+                        transform: isOpen ? "rotate(180deg)" : undefined,
+                      }}
+                    >
+                      ⌄
+                    </span>
+                  </button>
+
+                  <div
+                    className={`grid transition-all duration-500 ease-out ${
+                      isOpen
+                        ? "grid-rows-[1fr] opacity-100"
+                        : "grid-rows-[0fr] opacity-0"
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="space-y-3 px-5 pb-5">
+                        {boardFans.map((fan) => (
+                          <div
+                            key={`${board.title}-${fan.rank}`}
+                            className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                          >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
+                                style={{ background: theme.gradient }}
+                              >
+                                {fan.rank}
+                              </span>
+                              <div>
+                                <p className="font-black">{fan.name}</p>
+                                <p className="text-xs text-white/40">
+                                  {fan.badge}
+                                </p>
+                              </div>
+                            </div>
+                            <p
+                              className="bg-clip-text text-sm font-black text-transparent"
+                              style={{ backgroundImage: theme.text }}
+                            >
+                              {fan.metric}
+                            </p>
+                          </div>
+                        ))}
+
+                        <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                          <p className="text-sm leading-6 text-white/55">
+                            {board.reward}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Choose your support */}
+      <section
+        id="support"
+        className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8"
+      >
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+              Start supporting
+            </p>
+
+            <h3 className="mt-3 text-4xl font-black md:text-5xl">
+              Choose your support
+            </h3>
+
+            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
+              Your support activates your FanStreak and places you inside this
+              creator&rsquo;s ranking system.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {supportLevels.map((level) => {
+              const active = !isCustom && selectedAmount === level.amount;
+
+              return (
+                <button
+                  key={level.amount}
+                  onClick={() => chooseAmount(level.amount)}
+                  className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
+                  style={{
+                    borderColor: active
+                      ? theme.border
+                      : "rgba(255,255,255,0.1)",
+                    background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
+                    boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
+                  }}
+                >
+                  <p className="text-2xl font-black">{level.amount}</p>
+                  <p className="mt-2 text-base font-black text-white">
+                    {level.title}
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-white/45">
+                    {level.description}
+                  </p>
+                </button>
+              );
+            })}
+
+            <button
+              onClick={() => {
+                setIsCustom(true);
+                setSelectedAmount("");
+              }}
+              className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
+              style={{
+                borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
+                background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
+                boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
+              }}
+            >
+              <p className="text-2xl font-black">Custom</p>
+              <p className="mt-2 text-base font-black text-white">
+                Power Supporter
+              </p>
+              <p className="mt-1 text-sm leading-5 text-white/45">
+                Support without limits
+              </p>
+            </button>
+          </div>
+
+          {isCustom && (
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-bold text-white/45">
+                Enter custom support amount
+              </label>
+
+              <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
+                <span className="mr-3 text-xl font-black">₹</span>
+                <input
+                  value={customAmount}
+                  onChange={(event) =>
+                    setCustomAmount(event.target.value.replace(/\D/g, ""))
+                  }
+                  className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
+                  placeholder="Enter amount"
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={openSupportModal}
+            disabled={!canContinue}
+            className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
+              boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
+              color: canContinue ? "white" : "rgba(255,255,255,0.3)",
+            }}
+          >
+            Continue as {selectedSupportTitle} — {finalAmount}
+          </button>
+
+          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+            <p className="text-base leading-7 text-white/45">
+              After payment, your streak begins and your fan profile appears on
+              this creator&rsquo;s leaderboard.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Creator Drop Engine */}
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
         <div
@@ -1184,197 +1409,6 @@ export default function CreatorPage() {
                 ? "Open live Passport page →"
                 : "Preview Passport page with masked details →"}
             </a>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="support"
-        className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8"
-      >
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-              Start supporting
-            </p>
-
-            <h3 className="mt-3 text-4xl font-black md:text-5xl">
-              Choose your support
-            </h3>
-
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
-              Your support activates your FanStreak and places you inside this
-              creator’s ranking system.
-            </p>
-          </div>
-
-          <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {supportLevels.map((level) => {
-              const active = !isCustom && selectedAmount === level.amount;
-
-              return (
-                <button
-                  key={level.amount}
-                  onClick={() => chooseAmount(level.amount)}
-                  className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
-                  style={{
-                    borderColor: active
-                      ? theme.border
-                      : "rgba(255,255,255,0.1)",
-                    background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
-                    boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
-                  }}
-                >
-                  <p className="text-2xl font-black">{level.amount}</p>
-                  <p className="mt-2 text-base font-black text-white">
-                    {level.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-5 text-white/45">
-                    {level.description}
-                  </p>
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => {
-                setIsCustom(true);
-                setSelectedAmount("");
-              }}
-              className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
-              style={{
-                borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
-                background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
-                boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
-              }}
-            >
-              <p className="text-2xl font-black">Custom</p>
-              <p className="mt-2 text-base font-black text-white">
-                Power Supporter
-              </p>
-              <p className="mt-1 text-sm leading-5 text-white/45">
-                Support without limits
-              </p>
-            </button>
-          </div>
-
-          {isCustom && (
-            <div className="mt-5">
-              <label className="mb-2 block text-sm font-bold text-white/45">
-                Enter custom support amount
-              </label>
-
-              <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
-                <span className="mr-3 text-xl font-black">₹</span>
-                <input
-                  value={customAmount}
-                  onChange={(event) =>
-                    setCustomAmount(event.target.value.replace(/\D/g, ""))
-                  }
-                  className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
-                  placeholder="Enter amount"
-                  inputMode="numeric"
-                />
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={openSupportModal}
-            disabled={!canContinue}
-            className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
-              boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
-              color: canContinue ? "white" : "rgba(255,255,255,0.3)",
-            }}
-          >
-            Continue as {selectedSupportTitle} — {finalAmount}
-          </button>
-
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
-            <p className="text-base leading-7 text-white/45">
-              After payment, your streak begins and your fan profile appears on
-              this creator’s leaderboard.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-              Fan competition
-            </p>
-
-            <h3 className="mt-3 text-4xl font-black md:text-5xl">
-              Three ways to become visible
-            </h3>
-
-            <p className="mt-4 text-lg leading-8 text-white/50">
-              Fans can climb through streaks, loyalty, or support value. Each
-              leaderboard gives them a different reason to return and keep
-              supporting.
-            </p>
-          </div>
-
-          <div className="mt-8 grid gap-6 xl:grid-cols-3">
-            {leaderboardSets.map((board) => {
-              const boardFans =
-                board.title.includes("Highest Streak") && liveStreakFans.length
-                  ? liveStreakFans
-                  : board.fans;
-
-              return (
-              <div
-                key={board.title}
-                className="rounded-[2rem] border border-white/10 bg-black/25 p-5"
-              >
-                <h4 className="text-2xl font-black md:text-3xl">
-                  {board.title}
-                </h4>
-
-                <p className="mt-3 min-h-[72px] text-sm leading-6 text-white/45">
-                  {board.subtitle}
-                </p>
-
-                <div className="mt-6 space-y-3">
-                  {boardFans.map((fan) => (
-                    <div
-                      key={`${board.title}-${fan.rank}`}
-                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
-                          style={{ background: theme.gradient }}
-                        >
-                          {fan.rank}
-                        </span>
-
-                        <div>
-                          <p className="font-black">{fan.name}</p>
-                          <p className="text-xs text-white/40">{fan.badge}</p>
-                        </div>
-                      </div>
-
-                      <p
-                        className="bg-clip-text text-sm font-black text-transparent"
-                        style={{ backgroundImage: theme.text }}
-                      >
-                        {fan.metric}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <p className="text-sm leading-6 text-white/55">
-                    {board.reward}
-                  </p>
-                </div>
-              </div>
-              );
-            })}
           </div>
         </div>
       </section>
