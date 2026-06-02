@@ -279,7 +279,7 @@ export default function Home() {
                 FanStreak
               </h1>
               <p className="hidden text-xs text-white/45 sm:block">
-                Where loyalty becomes legend.
+                Where loyalty becomes legacy.
               </p>
             </div>
           </div>
