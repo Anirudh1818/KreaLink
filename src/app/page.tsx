@@ -41,14 +41,10 @@ type HomeCreator = {
   profilePhoto: string;
 };
 
-const reels = [
-  "/reels/reel-01.mp4",
-  "/reels/reel-02.mp4",
-  "/reels/reel-03.mp4",
-  "/reels/reel-04.mp4",
-  "/reels/reel-05.mp4",
-  "/reels/reel-06.mp4",
-];
+const reels = Array.from(
+  { length: 22 },
+  (_, index) => `/reels/reel-${String(index + 1).padStart(2, "0")}.mp4`
+);
 
 const fallbackCreators: HomeCreator[] = [
   {
@@ -88,6 +84,7 @@ export default function Home() {
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [waitlistMessage, setWaitlistMessage] = useState("");
   const [showSplash, setShowSplash] = useState(true);
+  const [reelSlots, setReelSlots] = useState([0, 1, 2, 3, 4, 5]);
 
   const theme = themes[activeTheme];
 
@@ -111,6 +108,26 @@ export default function Home() {
     }, 2600);
 
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setReelSlots((previous) => {
+        const used = new Set(previous);
+        const available = [];
+        for (let index = 0; index < reels.length; index += 1) {
+          if (!used.has(index)) available.push(index);
+        }
+        if (!available.length) return previous;
+
+        const next = [...previous];
+        const slot = Math.floor(Math.random() * next.length);
+        next[slot] = available[Math.floor(Math.random() * available.length)];
+        return next;
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -306,28 +323,33 @@ export default function Home() {
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
         <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
           <div className="flex h-full w-full">
-            {reels.map((src, index) => (
-              <div
-                key={src}
-                className={`relative h-full flex-1 ${
-                  index >= 4
-                    ? "hidden lg:block"
-                    : index === 3
-                    ? "hidden sm:block"
-                    : ""
-                }`}
-              >
-                <video
-                  className="h-full w-full object-cover"
-                  src={src}
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  preload="auto"
-                />
-              </div>
-            ))}
+            {reelSlots.map((reelIndex, slot) => {
+              const src = reels[reelIndex];
+
+              return (
+                <div
+                  key={slot}
+                  className={`relative h-full flex-1 ${
+                    slot >= 4
+                      ? "hidden lg:block"
+                      : slot === 3
+                      ? "hidden sm:block"
+                      : ""
+                  }`}
+                >
+                  <video
+                    className="h-full w-full object-cover"
+                    src={src}
+                    poster={src.replace(".mp4", ".jpg")}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="auto"
+                  />
+                </div>
+              );
+            })}
           </div>
 
           <div className="absolute inset-0 bg-[#050508]/55" />
