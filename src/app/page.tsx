@@ -279,7 +279,7 @@ export default function Home() {
                 FanStreak
               </h1>
               <p className="hidden text-xs text-white/45 sm:block">
-                Creator loyalty platform
+                Where loyalty becomes legend.
               </p>
             </div>
           </div>
@@ -359,7 +359,7 @@ export default function Home() {
         <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">
           <div className="mb-7 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/65 shadow-2xl">
             <span className="mr-2">✦</span>
-            FanStreak.in · creator fandom, status, and recognition
+            FanStreak.in · fan status, earned — never bought
           </div>
 
           <div
@@ -386,8 +386,9 @@ export default function Home() {
           </h2>
 
           <p className="mt-7 max-w-3xl text-lg leading-8 text-white/60 md:text-2xl md:leading-10">
-            Enter creator communities where every support builds your streak,
-            rank, badge, and fan status.
+            Step inside the worlds of the creators you love — where every act of
+            support builds your streak, your rank, and a name the whole community
+            remembers.
           </p>
 
           <div className="mt-8 flex flex-wrap justify-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-white/40">
@@ -830,7 +831,7 @@ export default function Home() {
           Get started
         </p>
         <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">
-          Jump in or make it your own
+          Claim your place in the fandom.
         </h2>
 
         <div className="mx-auto mt-8 flex w-full max-w-xl flex-col gap-4 sm:flex-row">
@@ -906,7 +907,7 @@ export default function Home() {
               FanStreak
             </h2>
             <p className="mt-2 text-sm text-white/45">
-              FanStreak.in — creator fandom, status, and monetization.
+              FanStreak — where fandom earns its name.
             </p>
           </div>
 
