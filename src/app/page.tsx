@@ -10,25 +10,25 @@ const features = [
   {
     title: "Fan Streaks",
     description:
-      "Fans keep their support streak alive and build visible loyalty inside the creator’s community.",
+      "Show up, support, repeat. Every consecutive day builds a streak that proves your loyalty — and the longer it runs, the harder your name is to ignore.",
     icon: "🔥",
   },
   {
     title: "Leaderboards",
     description:
-      "Daily, weekly, monthly, and all-time rankings turn support into public fan status.",
+      "Daily, weekly, monthly and all-time rankings turn quiet support into public standing. Climb the board and let the whole community see where you rank.",
     icon: "🏆",
   },
   {
     title: "Badges",
     description:
-      "Fans unlock identity badges like Early Supporter, Top Fan, Diamond Fan, and Longest Streak.",
+      "Earn identity badges — Early Supporter, Top Fan, Diamond Fan, Longest Streak — that live on your profile and signal exactly how real your fandom is.",
     icon: "💎",
   },
   {
     title: "Creator Recognition",
     description:
-      "Top fans can unlock shoutouts, messages, creator moments, meetups, and brand rewards.",
+      "Reach the top and unlock what money alone cannot buy: shoutouts, replies, creator moments, meetups and genuine recognition from the creator you back.",
     icon: "✨",
   },
 ];
@@ -288,7 +288,7 @@ export default function Home() {
             <a className="transition hover:text-white" href="#creators">
               Creators
             </a>
-            <a className="transition hover:text-white" href="#worlds">
+            <a className="transition hover:text-white" href="#themes">
               Themes
             </a>
             <a className="transition hover:text-white" href="#features">
@@ -410,10 +410,11 @@ export default function Home() {
       >
         <div className="max-w-3xl">
           <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Everything built around fan status
+            Everything is built around one thing — status
           </h2>
           <p className="mt-4 text-lg text-white/50">
-            FanStreak turns support into a visible identity inside the creator’s
+            FanStreak turns ordinary support into a visible identity: a name, a
+            rank, and a reputation that lives inside the creator&rsquo;s
             community.
           </p>
         </div>
@@ -566,60 +567,110 @@ export default function Home() {
         </div>
       </section>
 
-      <section
-        id="worlds"
-        className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8"
-      >
-        <div className="grid gap-10 md:grid-cols-[0.9fr_1.1fr] md:items-center">
-          <div>
-            <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
-              FanStreak themes
-            </p>
-            <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-              Switch the whole platform’s look
-            </h2>
-            <p className="mt-5 text-lg leading-8 text-white/55">
-              Every user can switch between premium FanStreak themes. The chosen
-              look follows them across the home page and creator page.
-            </p>
-          </div>
+      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
+        <div className="max-w-3xl">
+          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
+            Built for everyone
+          </p>
+          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+            Two sides. One community.
+          </h2>
+          <p className="mt-5 text-lg leading-8 text-white/55">
+            Fans get a place to be seen. Creators get a way to turn that
+            attention into income — no ads, no algorithm, no noise.
+          </p>
+        </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {(Object.keys(themes) as ThemeKey[]).map((key) => {
-              const item = themes[key];
-              const active = activeTheme === key;
+        <div className="mt-10 grid gap-5 md:grid-cols-2">
+          {[
+            {
+              eyebrow: "For fans",
+              icon: "🔥",
+              headline: "Turn your support into a status symbol.",
+              points: [
+                "Build a public streak and rank that is unmistakably yours.",
+                "Unlock badges and a shareable fan identity others can see.",
+                "Get noticed by the creators you actually care about.",
+              ],
+            },
+            {
+              eyebrow: "For creators",
+              icon: "💼",
+              headline: "Turn your most loyal fans into real income.",
+              points: [
+                "A personal page that converts attention into recurring support.",
+                "See who your top fans are — by streak, loyalty and value.",
+                "Reward them with recognition that deepens the bond.",
+              ],
+            },
+          ].map((side) => (
+            <div
+              key={side.eyebrow}
+              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 shadow-2xl"
+            >
+              <div
+                className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl text-3xl"
+                style={{ background: theme.softGradient }}
+              >
+                {side.icon}
+              </div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
+                {side.eyebrow}
+              </p>
+              <h3 className="mt-2 text-3xl font-black">{side.headline}</h3>
 
-              return (
-                <button
-                  key={key}
-                  onClick={() => changeTheme(key)}
-                  className="rounded-[2rem] border bg-white/[0.035] p-4 text-left shadow-2xl transition hover:bg-white/[0.055]"
-                  style={{
-                    borderColor: active ? item.border : "rgba(255,255,255,0.1)",
-                    boxShadow: active ? `0 0 45px ${item.glow}` : undefined,
-                  }}
-                >
+              <div className="mt-6 space-y-3">
+                {side.points.map((point) => (
                   <div
-                    className="relative overflow-hidden rounded-[1.5rem] p-[1px]"
-                    style={{ background: item.gradient }}
+                    key={point}
+                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/25 p-4"
                   >
-                    <div className="rounded-[1.45rem] bg-black/55 p-5 backdrop-blur-xl">
-                      <div className="mb-12 flex items-center justify-between">
-                        <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">
-                          {active ? "Active" : item.label}
-                        </span>
-                        <span className="text-xl">🔥</span>
-                      </div>
-                      <h3 className="text-2xl font-black">{item.name}</h3>
-                      <p className="mt-2 text-sm text-white/65">
-                        {item.description}
-                      </p>
-                    </div>
+                    <span
+                      className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: theme.gradient }}
+                    />
+                    <p className="leading-7 text-white/70">{point}</p>
                   </div>
-                </button>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
+        <div className="max-w-3xl">
+          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
+            The idea
+          </p>
+          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+            Why FanStreak works
+          </h2>
+        </div>
+
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {[
+            {
+              title: "Recognition beats reach",
+              body: "People don't just want to watch creators — they want to be seen by them. FanStreak makes that visible, and earnable.",
+            },
+            {
+              title: "Loyalty you can measure",
+              body: "Streaks, ranks and badges turn a vague feeling of fandom into something real, public, and worth competing for.",
+            },
+            {
+              title: "Status compounds",
+              body: "The longer a fan stays, the more they have built — so they keep coming back to protect a name that is now truly theirs.",
+            },
+          ].map((pillar) => (
+            <div
+              key={pillar.title}
+              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-7 shadow-2xl"
+            >
+              <h3 className="text-2xl font-black">{pillar.title}</h3>
+              <p className="mt-4 leading-8 text-white/55">{pillar.body}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -628,25 +679,29 @@ export default function Home() {
         className="relative z-10 mx-auto max-w-5xl px-5 py-20 text-center md:px-8"
       >
         <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-          How it works
+          Start in under a minute
         </h2>
+        <p className="mx-auto mt-4 max-w-2xl text-lg text-white/55">
+          No setup, no maze. Find a creator, back them, and your fan identity
+          starts building from day one.
+        </p>
 
         <div className="mt-12 grid gap-6 text-left md:grid-cols-3">
           {[
             {
               number: "1",
               title: "Find your creator",
-              body: "Open the creator’s FanStreak link from their bio or explore page.",
+              body: "Open any creator's FanStreak link from their bio, story, or our explore page.",
             },
             {
               number: "2",
               title: "Start supporting",
-              body: "Choose your support amount and activate your FanStreak.",
+              body: "Pick your amount, confirm, and your streak goes live the moment you support.",
             },
             {
               number: "3",
               title: "Climb ranks",
-              body: "Earn badges, move up leaderboards, and unlock creator recognition.",
+              body: "Keep your streak alive to earn badges, climb the leaderboard, and get noticed.",
             },
           ].map((step) => (
             <div
@@ -661,6 +716,46 @@ export default function Home() {
               </div>
               <h3 className="text-2xl font-black">{step.title}</h3>
               <p className="mt-4 leading-7 text-white/50">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="relative z-10 mx-auto max-w-4xl px-5 py-16 md:px-8">
+        <div className="text-center">
+          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
+            FAQ
+          </p>
+          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
+            Questions, answered
+          </h2>
+        </div>
+
+        <div className="mx-auto mt-10 grid max-w-3xl gap-4">
+          {[
+            {
+              q: "What exactly is FanStreak?",
+              a: "A loyalty platform where fans support their favourite creators and earn visible status — streaks, ranks and badges — inside that creator's community.",
+            },
+            {
+              q: "How does a fan build a streak?",
+              a: "Every day you support a creator, your streak grows by one. Miss a day and it resets — so showing up consistently is what carries you to the top.",
+            },
+            {
+              q: "What do creators get out of it?",
+              a: "A premium page that turns followers into paying, recurring supporters, plus a clear view of who their most valuable fans really are.",
+            },
+            {
+              q: "Is it safe to pay?",
+              a: "Yes. Payments run on secure, consented UPI mandates — with a reminder before every charge and one-tap cancel. Nothing hidden, ever.",
+            },
+          ].map((item) => (
+            <div
+              key={item.q}
+              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6"
+            >
+              <h3 className="text-xl font-black">{item.q}</h3>
+              <p className="mt-3 leading-8 text-white/55">{item.a}</p>
             </div>
           ))}
         </div>
@@ -727,7 +822,10 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto max-w-5xl px-5 pb-16 text-center md:px-8">
+      <section
+        id="themes"
+        className="relative z-10 mx-auto max-w-5xl px-5 pb-16 text-center md:px-8"
+      >
         <p className="text-sm font-black uppercase tracking-[0.25em] text-white/40">
           Get started
         </p>
@@ -815,7 +913,7 @@ export default function Home() {
           <div className="flex gap-6 text-sm text-white/45">
             <a href="#features">About</a>
             <a href="#creators">Creators</a>
-            <a href="#worlds">Themes</a>
+            <a href="#themes">Themes</a>
             <a href="#early-access">Early Access</a>
           </div>
         </div>
