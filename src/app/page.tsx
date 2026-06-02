@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isThemeKey, themes, type FanStreakTheme, type ThemeKey } from "@/lib/themes";
+import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 import { useAuth } from "@/lib/auth-context";
 
 const features = [
@@ -41,54 +41,14 @@ type HomeCreator = {
   profilePhoto: string;
 };
 
-function CollageTile({
-  creator,
-  theme,
-  delay,
-  rotate,
-}: {
-  creator: HomeCreator;
-  theme: FanStreakTheme;
-  delay: number;
-  rotate: number;
-}) {
-  const initial = creator.name.trim().charAt(0).toUpperCase() || "F";
-
-  return (
-    <div
-      className="relative h-44 w-36 overflow-hidden rounded-[1.6rem] border border-white/10 opacity-70 shadow-2xl"
-      style={{
-        transform: `rotate(${rotate}deg)`,
-        animation: `fsFloat ${6 + delay}s ease-in-out ${delay}s infinite`,
-        boxShadow: `0 0 40px ${theme.glow}`,
-      }}
-    >
-      {creator.profilePhoto ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={creator.profilePhoto}
-          alt={creator.name}
-          className="h-full w-full object-cover"
-          style={{ animation: `fsKen ${10 + delay}s ease-in-out alternate infinite` }}
-        />
-      ) : (
-        <div
-          className="flex h-full w-full items-center justify-center text-4xl font-black text-white/85"
-          style={{ background: theme.gradient }}
-        >
-          {initial}
-        </div>
-      )}
-
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
-        <p className="truncate text-xs font-black text-white/90">{creator.name}</p>
-        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-white/60">
-          <span className="h-1.5 w-1.5 rounded-full bg-rose-400" /> LIVE
-        </span>
-      </div>
-    </div>
-  );
-}
+const reels = [
+  "/reels/reel-01.mp4",
+  "/reels/reel-02.mp4",
+  "/reels/reel-03.mp4",
+  "/reels/reel-04.mp4",
+  "/reels/reel-05.mp4",
+  "/reels/reel-06.mp4",
+];
 
 const fallbackCreators: HomeCreator[] = [
   {
@@ -230,14 +190,6 @@ export default function Home() {
   const featuredInitial =
     featuredCreator.name.trim().charAt(0).toUpperCase() || "C";
 
-  const collagePool = creators.length ? creators : fallbackCreators;
-  const collageSix = Array.from(
-    { length: 6 },
-    (_, index) => collagePool[index % collagePool.length]
-  );
-  const leftTiles = collageSix.filter((_, index) => index % 2 === 0);
-  const rightTiles = collageSix.filter((_, index) => index % 2 === 1);
-
   return (
     <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
       <style>{`
@@ -352,32 +304,34 @@ export default function Home() {
       </header>
 
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
-        <div className="pointer-events-none absolute inset-0 hidden overflow-hidden lg:block">
-          <div className="absolute left-0 top-1/2 flex -translate-y-1/2 flex-col gap-6 pl-2 xl:pl-6">
-            {leftTiles.map((creator, index) => (
-              <CollageTile
-                key={`left-${creator.username}-${index}`}
-                creator={creator}
-                theme={theme}
-                delay={index * 0.7}
-                rotate={-6 + index * 3}
-              />
+        <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
+          <div className="flex h-full w-full">
+            {reels.map((src, index) => (
+              <div
+                key={src}
+                className={`relative h-full flex-1 ${
+                  index >= 4
+                    ? "hidden lg:block"
+                    : index === 3
+                    ? "hidden sm:block"
+                    : ""
+                }`}
+              >
+                <video
+                  className="h-full w-full object-cover"
+                  src={src}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="auto"
+                />
+              </div>
             ))}
           </div>
 
-          <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col gap-6 pr-2 xl:pr-6">
-            {rightTiles.map((creator, index) => (
-              <CollageTile
-                key={`right-${creator.username}-${index}`}
-                creator={creator}
-                theme={theme}
-                delay={0.4 + index * 0.7}
-                rotate={6 - index * 3}
-              />
-            ))}
-          </div>
-
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(5,5,8,0.82)_26%,rgba(5,5,8,0.82)_74%,transparent)]" />
+          <div className="absolute inset-0 bg-[#050508]/55" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-[#050508]/25 to-[#050508]" />
         </div>
 
         <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">

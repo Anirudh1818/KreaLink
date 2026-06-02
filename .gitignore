@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# raw source reels (originals kept locally, only optimized ones in public/reels are deployed)
+/reels-source
