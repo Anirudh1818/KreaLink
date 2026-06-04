@@ -241,13 +241,14 @@ export default function Home() {
             style={{ animation: "fsSplashIn 0.7s ease" }}
           >
             <div
-              className="flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/10"
+              className="flex h-24 w-24 items-center justify-center rounded-[2rem] border bg-white/5"
               style={{
-                background: theme.gradient,
+                borderColor: theme.border,
                 boxShadow: `0 0 90px ${theme.glow}`,
               }}
             >
-              <span className="text-5xl">🔥</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/flame.png" alt="FanStreak" className="h-14 w-14" />
             </div>
             <h1
               className="mt-6 bg-clip-text text-5xl font-black tracking-tight text-transparent"
@@ -284,7 +285,8 @@ export default function Home() {
                 boxShadow: `0 0 30px ${theme.glow}`,
               }}
             >
-              <span className="text-2xl">🔥</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
             </div>
             <div>
               <h1
@@ -314,16 +316,16 @@ export default function Home() {
             </a>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <a
               href={user ? "/me" : "/login"}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/70 transition hover:bg-white/[0.08]"
+              className="whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-white/70 transition hover:bg-white/[0.08] md:rounded-2xl md:px-5 md:py-3 md:text-sm"
             >
               {user ? "Account" : "Sign in"}
             </a>
             <a
               href="#early-access"
-              className="rounded-2xl px-5 py-3 text-sm font-bold text-white transition hover:scale-[1.02]"
+              className="whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-bold text-white transition hover:scale-[1.02] md:rounded-2xl md:px-5 md:py-3 md:text-sm"
               style={{
                 background: theme.gradient,
                 boxShadow: `0 0 35px ${theme.glow}`,
@@ -337,14 +339,17 @@ export default function Home() {
 
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
         <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
-          <div className="flex h-full w-full">
+          <div className="flex h-full w-full gap-0 p-0 md:gap-2.5 md:p-2.5">
             {reelSlots.map((reelIndex, slot) => {
               const src = reels[reelIndex];
 
               return (
-                <div key={slot} className="relative h-full flex-1">
+                <div
+                  key={slot}
+                  className="relative h-full flex-1 overflow-hidden rounded-none md:rounded-[1.75rem] md:border md:border-white/10 md:shadow-2xl"
+                >
                   <video
-                    className="h-full w-full object-cover transition-opacity duration-700"
+                    className="h-full w-full object-cover"
                     src={src}
                     poster={src.replace(".mp4", ".jpg")}
                     autoPlay
@@ -358,8 +363,10 @@ export default function Home() {
             })}
           </div>
 
-          <div className="absolute inset-0 bg-[#050508]/55" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-[#050508]/25 to-[#050508]" />
+          {/* cinematic darkening so the reels feel ambient and the text stays crisp */}
+          <div className="absolute inset-0 bg-[#050508]/45" />
+          <div className="absolute inset-0 bg-[radial-gradient(135%_105%_at_50%_38%,transparent_0%,rgba(5,5,8,0.35)_45%,rgba(5,5,8,0.82)_100%)]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-transparent to-[#050508]" />
         </div>
 
         <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">

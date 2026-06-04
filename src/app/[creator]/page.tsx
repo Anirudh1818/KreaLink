@@ -688,7 +688,8 @@ export default function CreatorPage() {
                 boxShadow: `0 0 30px ${theme.glow}`,
               }}
             >
-              <span className="text-2xl">🔥</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
             </div>
 
             <div>
@@ -1276,7 +1277,8 @@ export default function CreatorPage() {
             >
               <div className="rounded-[1.95rem] border border-white/10 bg-[#06060a]/95 p-6 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">🔥</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
                   <p className="text-xl font-black">FanStreak</p>
                 </div>
 

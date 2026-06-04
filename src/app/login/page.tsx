@@ -133,7 +133,8 @@ export default function LoginPage() {
               boxShadow: `0 0 30px ${theme.glow}`,
             }}
           >
-            <span className="text-2xl">🔥</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
           </div>
           <h1
             className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
