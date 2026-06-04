@@ -749,7 +749,7 @@ export default function CreatorPage() {
               />
             </div>
 
-            <div className="relative grid gap-8 md:grid-cols-[1fr_420px] md:items-center">
+            <div className="relative grid grid-cols-1 gap-8 md:grid-cols-[1fr_420px] md:items-center">
               <div>
                 <div className="mb-6 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70 backdrop-blur-xl">
                   Creator World Preview · {theme.name}
@@ -1268,7 +1268,7 @@ export default function CreatorPage() {
             />
 
             <div
-              className="relative ml-auto max-w-[560px] rotate-[3deg] rounded-[2rem] p-[1px]"
+              className="relative ml-auto w-full max-w-[560px] rotate-0 rounded-[2rem] p-[1px] md:rotate-[3deg]"
               style={{
                 background: theme.gradient,
                 boxShadow: `0 0 80px ${theme.glow}`,
@@ -1318,7 +1318,7 @@ export default function CreatorPage() {
             </div>
 
             <div
-              className="relative -mt-24 max-w-[590px] -rotate-[4deg] rounded-[2rem] p-[1px]"
+              className="relative mt-6 w-full max-w-[590px] rotate-0 rounded-[2rem] p-[1px] md:-mt-24 md:-rotate-[4deg]"
               style={{
                 background: theme.gradient,
                 boxShadow: `0 0 100px ${theme.glow}`,

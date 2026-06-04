@@ -84,6 +84,7 @@ export default function Home() {
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [waitlistMessage, setWaitlistMessage] = useState("");
   const [showSplash, setShowSplash] = useState(true);
+  const [tileCount, setTileCount] = useState(6);
   const [reelSlots, setReelSlots] = useState([0, 1, 2, 3, 4, 5]);
 
   const theme = themes[activeTheme];
@@ -110,25 +111,39 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Responsive number of background reels: 1 full reel on phones, more on
+  // larger screens.
+  useEffect(() => {
+    function computeTiles() {
+      const width = window.innerWidth;
+      setTileCount(width < 640 ? 1 : width < 1024 ? 3 : 6);
+    }
+
+    computeTiles();
+    window.addEventListener("resize", computeTiles);
+    return () => window.removeEventListener("resize", computeTiles);
+  }, []);
+
+  // Keep the visible reel set sized to the screen.
+  useEffect(() => {
+    setReelSlots(
+      Array.from({ length: tileCount }, (_, index) => index % reels.length)
+    );
+  }, [tileCount]);
+
+  // Every 3 seconds, swap each spot to a different reel (one full reel cycles
+  // through all of them on phones; the wall rotates on laptops).
   useEffect(() => {
     const interval = setInterval(() => {
-      setReelSlots((previous) => {
-        const used = new Set(previous);
-        const available = [];
-        for (let index = 0; index < reels.length; index += 1) {
-          if (!used.has(index)) available.push(index);
-        }
-        if (!available.length) return previous;
-
-        const next = [...previous];
-        const slot = Math.floor(Math.random() * next.length);
-        next[slot] = available[Math.floor(Math.random() * available.length)];
-        return next;
-      });
-    }, 5000);
+      setReelSlots((previous) =>
+        previous.map(
+          (reelIndex) => (reelIndex + previous.length) % reels.length
+        )
+      );
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [tileCount]);
 
   useEffect(() => {
     async function loadCreatorsFromFirestore() {
@@ -327,18 +342,9 @@ export default function Home() {
               const src = reels[reelIndex];
 
               return (
-                <div
-                  key={slot}
-                  className={`relative h-full flex-1 ${
-                    slot >= 4
-                      ? "hidden lg:block"
-                      : slot === 3
-                      ? "hidden sm:block"
-                      : ""
-                  }`}
-                >
+                <div key={slot} className="relative h-full flex-1">
                   <video
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover transition-opacity duration-700"
                     src={src}
                     poster={src.replace(".mp4", ".jpg")}
                     autoPlay
@@ -420,7 +426,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2">
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
           {features.map((feature) => (
             <div
               key={feature.title}
@@ -443,7 +449,7 @@ export default function Home() {
 
       <section
         id="creators"
-        className="relative z-10 mx-auto grid max-w-7xl gap-8 px-5 py-16 md:grid-cols-[1fr_0.85fr] md:px-8"
+        className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 gap-8 px-5 py-16 md:grid-cols-[1fr_0.85fr] md:px-8"
       >
         <div>
           <h2 className="text-4xl font-black tracking-tight md:text-5xl">
@@ -455,7 +461,7 @@ export default function Home() {
             their rank.
           </p>
 
-          <div className="mt-8 grid gap-4">
+          <div className="mt-8 grid grid-cols-1 gap-4">
             {creators.map((creator) => (
               <a
                 key={creator.username}
@@ -582,7 +588,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2">
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
           {[
             {
               eyebrow: "For fans",
@@ -649,7 +655,7 @@ export default function Home() {
           </h2>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
           {[
             {
               title: "Recognition beats reach",
@@ -687,7 +693,7 @@ export default function Home() {
           starts building from day one.
         </p>
 
-        <div className="mt-12 grid gap-6 text-left md:grid-cols-3">
+        <div className="mt-12 grid grid-cols-1 gap-6 text-left md:grid-cols-3">
           {[
             {
               number: "1",
@@ -732,7 +738,7 @@ export default function Home() {
           </h2>
         </div>
 
-        <div className="mx-auto mt-10 grid max-w-3xl gap-4">
+        <div className="mx-auto mt-10 grid max-w-3xl grid-cols-1 gap-4">
           {[
             {
               q: "What exactly is FanStreak?",
