@@ -266,6 +266,7 @@ if (isThemeKey(savedTheme)) {
 
    await setDoc(doc(db, "creators", cleanUsername), {
   ...newCreator,
+  ownerUid: user?.uid || "",
   theme: activeTheme,
   bio: `${cleanName} · ${cleanCategory} · fan recognition`,
   createdAt: serverTimestamp(),

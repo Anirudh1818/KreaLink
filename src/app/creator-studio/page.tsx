@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useAuth } from "@/lib/auth-context";
 
 type StudioCreator = {
+  ownerUid: string;
   name: string;
   username: string;
   category: string;
@@ -32,6 +34,7 @@ type LeaderboardFan = {
 };
 
 const fallbackStudioCreator: StudioCreator = {
+  ownerUid: "",
   name: "Samay Raina",
   username: "samay",
   category: "Comedy Creator",
@@ -172,6 +175,18 @@ export default function CreatorStudioPage() {
 
   const theme = themes[activeTheme];
 
+  const { user } = useAuth();
+  const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const isStudioAdmin = Boolean(
+    user?.email && adminEmails.includes(user.email.toLowerCase())
+  );
+  const canEdit = Boolean(
+    user && (isStudioAdmin || studioCreator.ownerUid === user.uid)
+  );
+
   useEffect(() => {
     const savedTheme = localStorage.getItem("fanstreak-theme");
 
@@ -209,6 +224,7 @@ export default function CreatorStudioPage() {
         const data = creatorSnapshot.data();
 
         const loadedCreator: StudioCreator = {
+          ownerUid: String(data.ownerUid || ""),
           name: String(data.name || "Creator"),
           username: String(data.username || creatorSnapshot.id),
           category: String(data.category || "Creator"),
@@ -275,6 +291,13 @@ export default function CreatorStudioPage() {
   }
 
   async function saveThemeAndRewards() {
+    if (!canEdit) {
+      alert(
+        "You can only manage your own creator page. Please sign in as the page owner."
+      );
+      return;
+    }
+
     try {
       localStorage.setItem("fanstreak-theme", activeTheme);
 

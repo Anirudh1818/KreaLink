@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useAuth } from "@/lib/auth-context";
 
 export default function JoinCreatorPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
   const [creatorName, setCreatorName] = useState("");
@@ -84,6 +86,14 @@ export default function JoinCreatorPage() {
       return;
     }
 
+    if (!user) {
+      setMessage(
+        "Please sign in first — your creator page is tied to your account."
+      );
+      setTimeout(() => router.push("/login?next=/join-creator"), 1000);
+      return;
+    }
+
     try {
       setIsCreating(true);
       setMessage("");
@@ -97,6 +107,7 @@ export default function JoinCreatorPage() {
       }
 
       await setDoc(doc(db, "creators", finalUsername), {
+        ownerUid: user.uid,
         name: finalName,
         username: finalUsername,
         category: finalCategory,
