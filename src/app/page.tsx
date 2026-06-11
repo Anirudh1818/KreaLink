@@ -109,7 +109,9 @@ export default function Home() {
   useEffect(() => {
     function computeTiles() {
       const width = window.innerWidth;
-      setTileCount(width < 640 ? 1 : width < 1024 ? 3 : 6);
+      // Phone: one full-screen reel (already perfect). Laptop: a few wide,
+      // full-bleed columns — fewer videos = a much smoother crossfade.
+      setTileCount(width < 640 ? 1 : width < 1024 ? 2 : 4);
     }
 
     computeTiles();
@@ -328,20 +330,23 @@ export default function Home() {
 
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
         <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
-          <div className="flex h-full w-full gap-0 p-0 md:gap-3 md:p-3">
+          {/* Full-bleed reel wall — no gaps, seamless across the width. */}
+          <div className="flex h-full w-full">
             {reelSlots.map((reelIndex, slot) => (
-              <div
-                key={slot}
-                className="relative h-full flex-1 overflow-hidden rounded-none md:rounded-[1.9rem] md:border md:border-white/[0.07] md:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]"
-              >
+              <div key={slot} className="relative h-full flex-1 overflow-hidden">
                 <ReelTile src={reels[reelIndex]} />
+                {/* Feather the seam between columns so the wall reads as one
+                    continuous backdrop instead of separate videos. */}
+                {slot > 0 && (
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-16 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#050508]/35 to-transparent" />
+                )}
               </div>
             ))}
           </div>
 
           {/* cinematic darkening so the reels feel ambient and the text stays crisp */}
           <div className="absolute inset-0 bg-[#050508]/45" />
-          <div className="absolute inset-0 bg-[radial-gradient(130%_105%_at_50%_36%,transparent_0%,rgba(5,5,8,0.4)_46%,rgba(5,5,8,0.85)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(130%_110%_at_50%_34%,transparent_0%,rgba(5,5,8,0.42)_45%,rgba(5,5,8,0.88)_100%)]" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-transparent to-[#050508]" />
         </div>
 
