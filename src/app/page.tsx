@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { themes, type ThemeKey } from "@/lib/themes";
 import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
+import { ReelTile } from "@/components/ReelTile";
 
 const features = [
   {
@@ -327,33 +328,20 @@ export default function Home() {
 
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
         <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
-          <div className="flex h-full w-full gap-0 p-0 md:gap-2.5 md:p-2.5">
-            {reelSlots.map((reelIndex, slot) => {
-              const src = reels[reelIndex];
-
-              return (
-                <div
-                  key={slot}
-                  className="relative h-full flex-1 overflow-hidden rounded-none md:rounded-[1.75rem] md:border md:border-white/10 md:shadow-2xl"
-                >
-                  <video
-                    className="h-full w-full object-cover"
-                    src={src}
-                    poster={src.replace(".mp4", ".jpg")}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                  />
-                </div>
-              );
-            })}
+          <div className="flex h-full w-full gap-0 p-0 md:gap-3 md:p-3">
+            {reelSlots.map((reelIndex, slot) => (
+              <div
+                key={slot}
+                className="relative h-full flex-1 overflow-hidden rounded-none md:rounded-[1.9rem] md:border md:border-white/[0.07] md:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)]"
+              >
+                <ReelTile src={reels[reelIndex]} />
+              </div>
+            ))}
           </div>
 
           {/* cinematic darkening so the reels feel ambient and the text stays crisp */}
           <div className="absolute inset-0 bg-[#050508]/45" />
-          <div className="absolute inset-0 bg-[radial-gradient(135%_105%_at_50%_38%,transparent_0%,rgba(5,5,8,0.35)_45%,rgba(5,5,8,0.82)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(130%_105%_at_50%_36%,transparent_0%,rgba(5,5,8,0.4)_46%,rgba(5,5,8,0.85)_100%)]" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-transparent to-[#050508]" />
         </div>
 
