@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
 
 const features = [
@@ -78,7 +79,7 @@ const leaderboard = [
 
 export default function Home() {
   const { user } = useAuth();
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const { activeTheme, changeTheme, theme } = useStoredTheme();
   const [creators, setCreators] = useState<HomeCreator[]>(fallbackCreators);
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
@@ -87,18 +88,9 @@ export default function Home() {
   const [tileCount, setTileCount] = useState(6);
   const [reelSlots, setReelSlots] = useState([0, 1, 2, 3, 4, 5]);
 
-  const theme = themes[activeTheme];
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-  }, []);
-
   useEffect(() => {
     if (sessionStorage.getItem("fanstreak-splash-seen") === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- skip splash if already seen this session
       setShowSplash(false);
       return;
     }
@@ -126,6 +118,7 @@ export default function Home() {
 
   // Keep the visible reel set sized to the screen.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs reel count to responsive tileCount
     setReelSlots(
       Array.from({ length: tileCount }, (_, index) => index % reels.length)
     );
@@ -182,11 +175,6 @@ export default function Home() {
       setCreators(fallbackCreators);
     });
   }, []);
-
-  function changeTheme(themeKey: ThemeKey) {
-    setActiveTheme(themeKey);
-    localStorage.setItem("fanstreak-theme", themeKey);
-  }
 
   async function joinEarlyAccess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

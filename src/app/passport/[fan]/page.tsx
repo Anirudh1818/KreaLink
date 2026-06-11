@@ -1,24 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 
-export default function PassportPage() {
+function PassportContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
 
-  const [fanName, setFanName] = useState("Passport Fan");
-  const [creatorName, setCreatorName] = useState("Creator");
-  const [creatorUsername, setCreatorUsername] = useState("creator");
+  const fanName = searchParams.get("fanName") || "Passport Fan";
+  const creatorName = searchParams.get("creatorName") || "Creator";
+  const creatorUsername = searchParams.get("creator") || "creator";
 
   const fanSlug = String(params?.fan || "passport-fan");
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-
-    setFanName(searchParams.get("fanName") || "Passport Fan");
-    setCreatorName(searchParams.get("creatorName") || "Creator");
-    setCreatorUsername(searchParams.get("creator") || "creator");
-  }, []);
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#050508] px-5 py-10 text-white">
@@ -170,5 +163,14 @@ export default function PassportPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function PassportPage() {
+  // useSearchParams requires a Suspense boundary during prerendering.
+  return (
+    <Suspense fallback={null}>
+      <PassportContent />
+    </Suspense>
   );
 }

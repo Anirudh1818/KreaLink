@@ -14,6 +14,12 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
+import {
+  loadRazorpayScript,
+  type RazorpayHandlerResponse,
+  type RazorpayOptions,
+} from "@/lib/razorpay";
 import { useAuth } from "@/lib/auth-context";
 
 const supportLevels = [
@@ -246,11 +252,14 @@ export default function CreatorPage() {
   const [passportFanName, setPassportFanName] = useState("");
   const [isPassportActive, setIsPassportActive] = useState(false);
 
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const {
+    activeTheme,
+    setActiveTheme,
+    changeTheme: applyTheme,
+    theme,
+  } = useStoredTheme();
   const [dropTimeLeft, setDropTimeLeft] = useState("24h 00m");
   const [isDropEnded, setIsDropEnded] = useState(false);
-
-  const theme = themes[activeTheme];
 
   const finalAmount = isCustom ? `₹${customAmount || "0"}` : selectedAmount;
   const canContinue = !isCustom || Number(customAmount) > 0;
@@ -363,7 +372,7 @@ export default function CreatorPage() {
     }
 
     loadCreator();
-  }, [creatorUsername]);
+  }, [creatorUsername, setActiveTheme]);
 
   useEffect(() => {
     if (!creatorUsername) return;
@@ -404,15 +413,8 @@ export default function CreatorPage() {
   }, [creatorUsername]);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-  }, []);
-
-  useEffect(() => {
     if (user && !supportFanName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- prefill fan name once from auth
       setSupportFanName(user.displayName || user.email?.split("@")[0] || "");
     }
   }, [user, supportFanName]);
@@ -425,6 +427,7 @@ export default function CreatorPage() {
     const savedPassportName = localStorage.getItem(passportNameKey);
 
     if (savedPassport === "true") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restores passport state per creator
       setIsPassportActive(true);
     }
 
@@ -474,8 +477,7 @@ export default function CreatorPage() {
   }, [creatorUsername]);
 
   function changeTheme(themeKey: ThemeKey) {
-    setActiveTheme(themeKey);
-    localStorage.setItem("fanstreak-theme", themeKey);
+    applyTheme(themeKey);
   }
 
   function chooseAmount(amount: string) {
@@ -487,94 +489,201 @@ export default function CreatorPage() {
     if (!canContinue) return;
     setIsModalOpen(true);
   }
-
-  async function confirmSupport() {
-    if (!user) {
-      setSupportError("Please sign in to start your streak.");
-      return;
-    }
-
-    const cleanFanName = supportFanName.trim();
-
-    if (!cleanFanName) {
-      setSupportError("Please enter your fan name.");
-      return;
-    }
-
-    if (isDailyMandate && !mandateConsent) {
-      setSupportError("Please agree to the daily support terms to continue.");
-      return;
-    }
-
-    try {
-      setIsProcessingSupport(true);
-      setSupportError("");
-
-      const fanSlug =
-        cleanFanName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "") || "fan";
-
-      const supportRef = doc(
-        db,
-        "supports",
-        `${creatorProfile.username}__${user.uid}`
-      );
-      const existingSupport = await getDoc(supportRef);
-
-      const todayKey = toDayKey(new Date());
-      const yesterdayKey = toDayKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
-
-      let streakDays = 1;
-
-      if (existingSupport.exists()) {
-        const data = existingSupport.data();
-        const lastDay = String(data.lastSupportDate || "");
-        const previousStreak = Number(data.streakDays || 0);
-
-        if (lastDay === todayKey) {
-          streakDays = previousStreak || 1;
-        } else if (lastDay === yesterdayKey) {
-          streakDays = previousStreak + 1;
-        } else {
-          streakDays = 1;
-        }
-      }
-
-      await setDoc(
-        supportRef,
-        {
-          creator: creatorProfile.username,
-          creatorName: creatorProfile.name,
-          fanUid: user.uid,
-          fanName: cleanFanName,
-          fanSlug,
-          lastAmount: finalAmount,
-          frequency: isDailyMandate ? "daily" : "once",
-          mandateConsent: isDailyMandate,
-          lastSupportDate: todayKey,
-          streakDays,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      window.location.href = `/success?creator=${encodeURIComponent(
-        creatorProfile.username
-      )}&creatorName=${encodeURIComponent(
-        creatorProfile.name
-      )}&fanName=${encodeURIComponent(
-        cleanFanName
-      )}&streak=${streakDays}&amount=${encodeURIComponent(
-        finalAmount
-      )}&frequency=${isDailyMandate ? "daily" : "once"}`;
-    } catch (error) {
-      console.error("Failed to record support:", error);
-      setSupportError("Something went wrong. Please try again.");
-      setIsProcessingSupport(false);
-    }
+async function confirmSupport() {
+  if (!user) {
+    setSupportError("Please sign in to start your streak.");
+    return;
   }
+
+  const cleanFanName = supportFanName.trim();
+
+  if (!cleanFanName) {
+    setSupportError("Please enter your fan name.");
+    return;
+  }
+
+  if (isDailyMandate) {
+    setSupportError("Daily auto-support is not live yet. Please choose Support once.");
+    return;
+  }
+
+  try {
+    setIsProcessingSupport(true);
+    setSupportError("");
+
+    const amountNumber = Number(finalAmount.replace(/[^\d.]/g, ""));
+
+    if (!amountNumber || amountNumber < 1) {
+      setSupportError("Invalid support amount.");
+      setIsProcessingSupport(false);
+      return;
+    }
+
+    const razorpayScriptLoaded = await loadRazorpayScript();
+
+    if (!razorpayScriptLoaded) {
+      setSupportError("Razorpay failed to load. Please try again.");
+      setIsProcessingSupport(false);
+      return;
+    }
+
+    const orderResponse = await fetch("/api/razorpay/create-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: amountNumber,
+        creatorId: creatorProfile.username,
+        creatorName: creatorProfile.name,
+        fanUid: user.uid,
+        fanName: cleanFanName,
+      }),
+    });
+
+    const orderData = await orderResponse.json();
+
+    if (!orderResponse.ok) {
+      setSupportError(orderData?.error || "Failed to create payment order.");
+      setIsProcessingSupport(false);
+      return;
+    }
+
+    const options: RazorpayOptions = {
+      key: orderData.keyId,
+      amount: orderData.amount,
+      currency: orderData.currency || "INR",
+      name: "FanStreak",
+      description: `Support ${creatorProfile.name}`,
+      order_id: orderData.orderId,
+      prefill: {
+        name: cleanFanName,
+        email: user.email || "",
+      },
+      notes: {
+        creatorId: creatorProfile.username,
+        creatorName: creatorProfile.name,
+        fanUid: user.uid,
+        fanName: cleanFanName,
+      },
+      theme: {
+        color: "#8B5CF6",
+      },
+      handler: async function (response: RazorpayHandlerResponse) {
+        try {
+          const verifyResponse = await fetch("/api/razorpay/verify-payment", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          });
+
+          const verifyData = await verifyResponse.json();
+
+          if (!verifyResponse.ok || !verifyData.success) {
+            setSupportError("Payment verification failed.");
+            setIsProcessingSupport(false);
+            return;
+          }
+
+          const fanSlug =
+            cleanFanName
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/(^-|-$)/g, "") || "fan";
+
+          const supportRef = doc(
+            db,
+            "supports",
+            `${creatorProfile.username}__${user.uid}`
+          );
+
+          const existingSupport = await getDoc(supportRef);
+
+          const todayKey = toDayKey(new Date());
+          const yesterdayKey = toDayKey(
+            new Date(Date.now() - 24 * 60 * 60 * 1000)
+          );
+
+          let streakDays = 1;
+
+          if (existingSupport.exists()) {
+            const data = existingSupport.data();
+            const lastDay = String(data.lastSupportDate || "");
+            const previousStreak = Number(data.streakDays || 0);
+
+            if (lastDay === todayKey) {
+              streakDays = previousStreak || 1;
+            } else if (lastDay === yesterdayKey) {
+              streakDays = previousStreak + 1;
+            } else {
+              streakDays = 1;
+            }
+          }
+
+          await setDoc(
+            supportRef,
+            {
+              creator: creatorProfile.username,
+              creatorName: creatorProfile.name,
+              fanUid: user.uid,
+              fanName: cleanFanName,
+              fanSlug,
+              lastAmount: finalAmount,
+              amountPaid: amountNumber,
+              frequency: "once",
+              mandateConsent: false,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              paymentStatus: "verified",
+              lastSupportDate: todayKey,
+              streakDays,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+          window.location.href = `/success?creator=${encodeURIComponent(
+            creatorProfile.username
+          )}&creatorName=${encodeURIComponent(
+            creatorProfile.name
+          )}&fanName=${encodeURIComponent(
+            cleanFanName
+          )}&streak=${streakDays}&amount=${encodeURIComponent(
+            finalAmount
+          )}&frequency=once`;
+        } catch (error) {
+          console.error("Failed after payment verification:", error);
+          setSupportError("Payment completed but support recording failed.");
+          setIsProcessingSupport(false);
+        }
+      },
+      modal: {
+        ondismiss: function () {
+          setIsProcessingSupport(false);
+        },
+      },
+    };
+
+    if (!window.Razorpay) {
+      setSupportError("Razorpay failed to load. Please try again.");
+      setIsProcessingSupport(false);
+      return;
+    }
+
+    const razorpay = new window.Razorpay(options);
+    razorpay.open();
+  } catch (error) {
+    console.error("Failed to start Razorpay payment:", error);
+    setSupportError("Something went wrong. Please try again.");
+    setIsProcessingSupport(false);
+  }
+}
 
   function getPassportSlug() {
     const cleanName = passportFanName
@@ -766,6 +875,7 @@ export default function CreatorPage() {
                   >
                     <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#101015] text-5xl font-black">
                       {creatorProfile.profilePhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={creatorProfile.profilePhoto}
                           alt={creatorProfile.name}
@@ -1393,6 +1503,7 @@ export default function CreatorPage() {
                   </div>
 
                   <div className="rounded-[1.4rem] border border-white/10 bg-white p-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={passportQrUrl}
                       alt="FanStreak Passport QR"

@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { collection, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
 
 
@@ -108,7 +109,7 @@ const transactions = [
 ];
 
 export default function AdminPage() {
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const { theme, changeTheme, activeTheme } = useStoredTheme();
   const [creators, setCreators] = useState<Creator[]>(initialCreators);
   const [paidPayouts, setPaidPayouts] = useState<string[]>([]);
   const [isAddCreatorOpen, setIsAddCreatorOpen] = useState(false);
@@ -119,8 +120,6 @@ export default function AdminPage() {
   const [creatorCategory, setCreatorCategory] = useState("");
 
   const { user, loading: authLoading } = useAuth();
-
-  const theme = themes[activeTheme];
 
   const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
     .split(",")
@@ -158,14 +157,6 @@ export default function AdminPage() {
   );
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-if (isThemeKey(savedTheme)) {
-  setActiveTheme(savedTheme);
-}
-  }, []);
-
-  useEffect(() => {
   async function loadCreatorsFromFirestore() {
     const snapshot = await getDocs(collection(db, "creators"));
 
@@ -193,11 +184,6 @@ if (isThemeKey(savedTheme)) {
     console.error("Failed to load creators from Firestore:", error);
   });
 }, []);
-
-  function changeTheme(themeKey: ThemeKey) {
-    setActiveTheme(themeKey);
-    localStorage.setItem("fanstreak-theme", themeKey);
-  }
 
   async function approveCreator(name: string) {
   const matchedCreator = creators.find((creator) => creator.name === name);

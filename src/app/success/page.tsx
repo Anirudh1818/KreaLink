@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useStoredTheme } from "@/lib/use-theme";
 
 
 const unlockedItems = [
@@ -22,44 +23,23 @@ const unlockedItems = [
   },
 ];
 
-export default function SuccessPage() {
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+function SuccessContent() {
+  const { theme } = useStoredTheme();
   const [copied, setCopied] = useState(false);
-  const [support, setSupport] = useState({
-    creator: "",
-    creatorName: "",
-    fanName: "",
-    streak: "1",
-    frequency: "once",
-    amount: "",
-  });
 
-  const theme = themes[activeTheme];
+  const params = useSearchParams();
+  const support = {
+    creator: params.get("creator") || "",
+    creatorName: params.get("creatorName") || "",
+    fanName: params.get("fanName") || "",
+    streak: params.get("streak") || "1",
+    frequency: params.get("frequency") || "once",
+    amount: params.get("amount") || "",
+  };
 
   const creatorLink = support.creator ? `/${support.creator}` : "/";
   const creatorLabel = support.creatorName || "your creator";
   const isDaily = support.frequency === "daily";
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-if (isThemeKey(savedTheme)) {
-  setActiveTheme(savedTheme);
-}
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-
-    setSupport({
-      creator: params.get("creator") || "",
-      creatorName: params.get("creatorName") || "",
-      fanName: params.get("fanName") || "",
-      streak: params.get("streak") || "1",
-      frequency: params.get("frequency") || "once",
-      amount: params.get("amount") || "",
-    });
-  }, []);
 
   async function copyShareText() {
     const creatorHandle = support.creator || "fanstreak";
@@ -288,5 +268,14 @@ if (isThemeKey(savedTheme)) {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function SuccessPage() {
+  // useSearchParams requires a Suspense boundary during prerendering.
+  return (
+    <Suspense fallback={null}>
+      <SuccessContent />
+    </Suspense>
   );
 }

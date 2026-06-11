@@ -1,17 +1,17 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
 
 export default function JoinCreatorPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const { activeTheme, theme } = useStoredTheme();
   const [creatorName, setCreatorName] = useState("");
   const [username, setUsername] = useState("");
   const [category, setCategory] = useState("");
@@ -25,16 +25,6 @@ export default function JoinCreatorPage() {
   const [showSocialLinks, setShowSocialLinks] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [message, setMessage] = useState("");
-
-  const theme = themes[activeTheme];
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-  }, []);
 
   function cleanUsername(value: string) {
     return value.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -245,6 +235,7 @@ export default function JoinCreatorPage() {
                 >
                   <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.35rem] bg-[#111116] text-3xl font-black">
                     {profilePhoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={profilePhoto}
                         alt="Creator preview"
@@ -327,6 +318,7 @@ export default function JoinCreatorPage() {
                 >
                   <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.45rem] bg-[#111116] text-3xl font-black">
                     {profilePhoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={profilePhoto}
                         alt="Uploaded profile"

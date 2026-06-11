@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
 
 type StudioCreator = {
@@ -168,12 +169,15 @@ const creatorProStudio = {
 export default function CreatorStudioPage() {
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const {
+    activeTheme,
+    setActiveTheme,
+    changeTheme: applyTheme,
+    theme,
+  } = useStoredTheme();
   const [studioCreator, setStudioCreator] =
     useState<StudioCreator>(fallbackStudioCreator);
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
-
-  const theme = themes[activeTheme];
 
   const { user } = useAuth();
   const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
@@ -186,14 +190,6 @@ export default function CreatorStudioPage() {
   const canEdit = Boolean(
     user && (isStudioAdmin || studioCreator.ownerUid === user.uid)
   );
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-  }, []);
 
   useEffect(() => {
     async function loadCurrentCreator() {
@@ -258,11 +254,10 @@ export default function CreatorStudioPage() {
     }
 
     loadCurrentCreator();
-  }, []);
+  }, [setActiveTheme]);
 
   function changeTheme(themeKey: ThemeKey) {
-    setActiveTheme(themeKey);
-    localStorage.setItem("fanstreak-theme", themeKey);
+    applyTheme(themeKey);
     setSaved(false);
   }
 
@@ -495,6 +490,7 @@ export default function CreatorStudioPage() {
                 >
                   <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.35rem] bg-[#101015] text-3xl font-black">
                     {studioCreator.profilePhoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={studioCreator.profilePhoto}
                         alt={studioCreator.name}

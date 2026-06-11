@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -9,7 +9,7 @@ import {
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 
 function friendlyAuthError(code: string) {
   switch (code) {
@@ -32,36 +32,26 @@ function friendlyAuthError(code: string) {
   }
 }
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const { user } = useAuth();
+  const { theme } = useStoredTheme();
+  const searchParams = useSearchParams();
 
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
-  const [nextPath, setNextPath] = useState("/");
 
-  const theme = themes[activeTheme];
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const requestedNext = params.get("next");
-
-    // Only allow same-site relative redirects.
-    if (requestedNext && requestedNext.startsWith("/")) {
-      setNextPath(requestedNext);
-    }
-  }, []);
+  // Only allow same-site relative redirects ("//evil.com" is protocol-relative
+  // and would leave the site, so it must be rejected too).
+  const requestedNext = searchParams.get("next");
+  const nextPath =
+    requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
+      ? requestedNext
+      : "/";
 
   useEffect(() => {
     if (user) {
@@ -235,5 +225,14 @@ export default function LoginPage() {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  // useSearchParams requires a Suspense boundary during prerendering.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

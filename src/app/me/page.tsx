@@ -5,7 +5,7 @@ import { signOut } from "firebase/auth";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
+import { useStoredTheme } from "@/lib/use-theme";
 
 type FanStreak = {
   creator: string;
@@ -18,27 +18,14 @@ type FanStreak = {
 export default function FanProfilePage() {
   const { user, loading } = useAuth();
 
-  const [activeTheme, setActiveTheme] = useState<ThemeKey>("flame");
+  const { theme } = useStoredTheme();
   const [streaks, setStreaks] = useState<FanStreak[]>([]);
   const [isLoadingStreaks, setIsLoadingStreaks] = useState(true);
 
-  const theme = themes[activeTheme];
-
   useEffect(() => {
-    const savedTheme = localStorage.getItem("fanstreak-theme");
-
-    if (isThemeKey(savedTheme)) {
-      setActiveTheme(savedTheme);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (loading) return;
-
-    if (!user) {
-      setIsLoadingStreaks(false);
-      return;
-    }
+    // The signed-out branch renders before isLoadingStreaks is consulted,
+    // so only signed-in users need the load.
+    if (loading || !user) return;
 
     async function loadStreaks() {
       try {
