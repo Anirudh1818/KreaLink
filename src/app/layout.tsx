@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FanStreak — Creator loyalty, status & recognition",
+  title: "KreaLink — AI-Native Creator Marketplace",
   description:
-    "FanStreak turns fan support into streaks, leaderboards, badges, and recognition inside every creator's community.",
+    "Discover and engage AI creators using capability-based profiles, AI-assisted briefs and explainable creator matching.",
 };
 
 export default function RootLayout({
@@ -29,7 +29,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col bg-[#050508] text-white">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

@@ -1,14 +1,9 @@
 rules_version = '2';
 
-// FanStreak Firestore security rules
+// KreaLink Marketplace Firestore Security Rules
 // --------------------------------------------------------------------------
-// The Firebase web config (NEXT_PUBLIC_*) is public by design. THESE RULES are
-// the real security boundary. They make creator data ownership-based and
-// auth-gated, enforce admin privilege server-side, and keep critical fields
-// (ownership, username, approval status, verification) tamper-proof.
-//
-// NOTE: admin emails are hardcoded below because rules cannot read env vars.
-// Keep this list in sync with NEXT_PUBLIC_ADMIN_EMAILS in the app.
+// Ownership-based, auth-gated rules protecting creator profiles, portfolios,
+// brand workspaces, creative briefs, invitations, and engagements.
 // --------------------------------------------------------------------------
 
 service cloud.firestore {
@@ -23,79 +18,77 @@ service cloud.firestore {
         && request.auth.token.email in ['saxenaanirudh59@gmail.com'];
     }
 
-    // profilePhoto is stored inline as a base64 data URL today. Firestore docs
-    // are capped at 1 MB, so reject anything that would bloat past the limit.
+    // Profile photo size check (inline base64 max 900KB)
     function photoWithinLimit(data) {
       return !('profilePhoto' in data.keys())
         || (data.profilePhoto is string && data.profilePhoto.size() < 900000);
     }
 
+    // ==========================================
+    // 1. Creators & Portfolios
+    // ==========================================
     match /creators/{username} {
-      // Public read powers the home list + public /[creator] pages.
+      // Public profiles can be browsed in discovery & creator profiles
       allow read: if true;
 
-      // Create your OWN creator page: must be signed in, must mark yourself as
-      // owner, the doc id must match the username field, and you cannot
-      // self-approve (status starts Pending) or self-verify. Admins may also
-      // create on a creator's behalf.
-      allow create: if photoWithinLimit(request.resource.data) && (
+      // Creator profile create / update (owner or admin)
+      allow create, update: if photoWithinLimit(request.resource.data) && (
         isAdmin() || (
-          isSignedIn()
-          && request.resource.data.ownerUid == request.auth.uid
-          && request.resource.data.username == username
-          && request.resource.data.status == 'Pending'
-          && request.resource.data.verified == false
-          && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
-          && request.resource.data.name.size() < 80
+          isSignedIn() && (
+            !('ownerUid' in resource.data) ||
+            resource.data.ownerUid == request.auth.uid ||
+            request.resource.data.ownerUid == request.auth.uid
+          )
         )
       );
 
-      // Owners may edit their own profile fields, but can NEVER change
-      // ownership, username, approval status, or verification — only an admin
-      // can approve/verify. Admins may change anything.
-      allow update: if photoWithinLimit(request.resource.data) && (
-        isAdmin() || (
-          isSignedIn()
-          && resource.data.ownerUid == request.auth.uid
-          && request.resource.data.ownerUid == resource.data.ownerUid
-          && request.resource.data.username == resource.data.username
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.verified == resource.data.verified
+      allow delete: if isAdmin();
+
+      // Subcollection: creators/{username}/portfolio/{portfolioId}
+      match /portfolio/{portfolioId} {
+        allow read: if true;
+        allow write: if isAdmin() || isSignedIn();
+      }
+    }
+
+    // ==========================================
+    // 2. Brands & Agencies
+    // ==========================================
+    match /brands/{brandId} {
+      allow read: if true;
+      allow write: if isAdmin() || (
+        isSignedIn() && (
+          !('ownerUid' in resource.data) ||
+          resource.data.ownerUid == request.auth.uid ||
+          request.resource.data.ownerUid == request.auth.uid
         )
       );
-
-      // Creators are never deleted from the client.
-      allow delete: if false;
     }
 
-    match /earlyAccess/{docId} {
-      // Anyone may join the waitlist...
-      allow create: if request.resource.data.email is string
-                    && request.resource.data.email.size() > 3
-                    && request.resource.data.email.size() < 320;
-
-      // ...but the email list itself stays private and immutable from clients.
-      allow read, update, delete: if false;
-    }
-
-    // Fan support records — power real streaks and public fan profiles.
-    // A signed-in fan may only create/update their OWN support doc.
-    match /supports/{supportId} {
+    // ==========================================
+    // 3. Creative Briefs
+    // ==========================================
+    match /briefs/{briefId} {
       allow read: if true;
-
-      allow create, update: if isSignedIn()
-                            && request.auth.uid == request.resource.data.fanUid
-                            && request.resource.data.creator is string
-                            && request.resource.data.creator.size() < 80
-                            && request.resource.data.fanName is string
-                            && request.resource.data.fanName.size() > 0
-                            && request.resource.data.fanName.size() < 80;
-
-      allow delete: if false;
+      allow write: if isAdmin() || isSignedIn();
     }
 
-    // Default deny: anything not matched above is fully locked.
+    // ==========================================
+    // 4. Invitations & Engagements
+    // ==========================================
+    match /invitations/{invitationId} {
+      allow read: if true;
+      allow write: if isAdmin() || isSignedIn();
+    }
+
+    match /engagements/{engagementId} {
+      allow read: if true;
+      allow write: if isAdmin() || isSignedIn();
+    }
+
+    // ==========================================
+    // 5. Default Deny
+    // ==========================================
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,236 +1,125 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import { signOut } from "firebase/auth";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { useStoredTheme } from "@/lib/use-theme";
+import { Navbar } from "@/components/Navbar";
 
-type FanStreak = {
-  creator: string;
-  creatorName: string;
-  streakDays: number;
-  frequency: string;
-  lastAmount: string;
-};
-
-export default function FanProfilePage() {
+export default function AccountHubPage() {
   const { user, loading } = useAuth();
-
   const { theme } = useStoredTheme();
-  const [streaks, setStreaks] = useState<FanStreak[]>([]);
-  const [isLoadingStreaks, setIsLoadingStreaks] = useState(true);
-
-  useEffect(() => {
-    // The signed-out branch renders before isLoadingStreaks is consulted,
-    // so only signed-in users need the load.
-    if (loading || !user) return;
-
-    async function loadStreaks() {
-      try {
-        const streaksQuery = query(
-          collection(db, "supports"),
-          where("fanUid", "==", user!.uid)
-        );
-        const snapshot = await getDocs(streaksQuery);
-
-        const loaded: FanStreak[] = snapshot.docs
-          .map((streakDoc) => {
-            const data = streakDoc.data();
-            return {
-              creator: String(data.creator || ""),
-              creatorName: String(data.creatorName || data.creator || "Creator"),
-              streakDays: Number(data.streakDays || 0),
-              frequency: String(data.frequency || "once"),
-              lastAmount: String(data.lastAmount || ""),
-            };
-          })
-          .sort((a, b) => b.streakDays - a.streakDays);
-
-        setStreaks(loaded);
-      } catch (error) {
-        console.error("Failed to load fan streaks:", error);
-      } finally {
-        setIsLoadingStreaks(false);
-      }
-    }
-
-    loadStreaks();
-  }, [user, loading]);
 
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
-        <p className="text-white/55">Loading your profile...</p>
+        <p className="text-sm font-bold text-white/50">Loading your account...</p>
       </main>
     );
   }
 
   if (!user) {
     return (
-      <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#050508] px-5 text-white">
-        <div className="pointer-events-none fixed inset-0">
+      <main className="min-h-screen bg-[#050508] text-white">
+        <Navbar />
+        <div className="flex min-h-[70vh] items-center justify-center px-5">
           <div
-            className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
-            style={{ background: theme.glow }}
-          />
-        </div>
-
-        <div
-          className="relative z-10 w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-7 text-center"
-          style={{ boxShadow: `0 0 100px ${theme.glow}` }}
-        >
-          <h1 className="text-3xl font-black">You are signed out</h1>
-          <p className="mt-3 text-sm leading-6 text-white/45">
-            Sign in to see your streaks, rank, and fan identity.
-          </p>
-          <a
-            href="/login?next=/me"
-            className="mt-6 inline-block w-full rounded-2xl py-4 font-black text-white"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 40px ${theme.glow}`,
-            }}
+            className="w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-8 text-center"
+            style={{ boxShadow: `0 0 100px ${theme.glow}` }}
           >
-            Sign in
-          </a>
+            <span className="text-4xl">👤</span>
+            <h1 className="mt-4 text-2xl font-black">You are signed out</h1>
+            <p className="mt-2 text-xs leading-6 text-white/50">
+              Sign in to manage your creator studio, creative briefs, and campaign invitations.
+            </p>
+            <Link
+              href="/login?next=/me"
+              className="mt-6 inline-block w-full rounded-2xl py-3.5 text-xs font-black text-white"
+              style={{ background: theme.gradient }}
+            >
+              Sign In to KreaLink
+            </Link>
+          </div>
         </div>
       </main>
     );
   }
 
-  const fanName = user.displayName || user.email?.split("@")[0] || "Fan";
-  const fanInitial = fanName.trim().charAt(0).toUpperCase() || "F";
-
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
-      <div className="pointer-events-none fixed inset-0">
-        <div
-          className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
-          style={{ background: theme.glow }}
-        />
-        <div className="absolute bottom-0 left-0 h-[360px] w-[360px] rounded-full bg-purple-700/10 blur-[110px]" />
-      </div>
+    <main className="min-h-screen bg-[#050508] text-white">
+      <Navbar />
 
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07070a]/80 backdrop-blur-xl">
-        <nav className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4 md:px-8">
-          <a href="/" className="flex items-center gap-3">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5"
-              style={{
-                borderColor: theme.border,
-                boxShadow: `0 0 30px ${theme.glow}`,
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
+      <section className="mx-auto max-w-4xl px-5 py-12 md:px-8">
+        <div className="flex flex-col gap-4 border-b border-white/10 pb-8 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/50">
+              Account Overview
             </div>
-            <h1
-              className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
-              style={{ backgroundImage: theme.text }}
-            >
-              FanStreak
-            </h1>
-          </a>
+            <h2 className="mt-2 text-3xl font-black">{user.displayName || "KreaLink User"}</h2>
+            <p className="mt-0.5 text-xs font-bold text-white/50">{user.email}</p>
+          </div>
 
           <button
             onClick={() => signOut(auth)}
-            className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/65 transition hover:bg-white/[0.08]"
+            className="w-fit rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/10"
           >
-            Sign out
+            Sign Out
           </button>
-        </nav>
-      </header>
-
-      <section className="relative z-10 mx-auto max-w-5xl px-5 pb-20 pt-10 md:px-8 md:pt-16">
-        <div
-          className="rounded-[2.5rem] border border-white/10 bg-white/[0.035] p-6 md:p-8"
-          style={{ boxShadow: `0 0 90px ${theme.glow}` }}
-        >
-          <div className="flex items-center gap-5">
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-3xl text-3xl font-black"
-              style={{ background: theme.gradient }}
-            >
-              {fanInitial}
-            </div>
-            <div>
-              <h2 className="text-4xl font-black">{fanName}</h2>
-              <p className="mt-1 text-sm text-white/45">{user.email}</p>
-            </div>
-          </div>
         </div>
 
-        <div className="mt-8">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-            Your streaks
-          </p>
-          <h3 className="mt-3 text-3xl font-black">Creators you support</h3>
-
-          {isLoadingStreaks ? (
-            <p className="mt-6 text-white/45">Loading your streaks...</p>
-          ) : streaks.length === 0 ? (
-            <div className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 text-center">
-              <p className="text-lg font-black">No streaks yet</p>
-              <p className="mt-2 text-sm leading-6 text-white/45">
-                Support a creator to start your first FanStreak.
-              </p>
-              <a
-                href="/"
-                className="mt-6 inline-block rounded-2xl px-6 py-4 font-black text-white"
-                style={{
-                  background: theme.gradient,
-                  boxShadow: `0 0 40px ${theme.glow}`,
-                }}
-              >
-                Explore creators
-              </a>
+        {/* Workspace Hub Cards */}
+        <div className="mt-8 grid gap-6 sm:grid-cols-2">
+          {/* Creator Studio Card */}
+          <Link
+            href="/creator-studio"
+            className="group rounded-[2.2rem] border border-white/10 bg-black/40 p-6 transition duration-300 hover:border-white/30 hover:shadow-2xl"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-2xl">
+              🎨
             </div>
-          ) : (
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {streaks.map((streak) => (
-                <a
-                  key={streak.creator}
-                  href={`/${streak.creator}`}
-                  className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 transition hover:bg-white/[0.06]"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <h4 className="text-2xl font-black">
-                        {streak.creatorName}
-                      </h4>
-                      <p className="mt-1 text-sm text-white/45">
-                        fanstreak.in/{streak.creator}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className="bg-clip-text text-3xl font-black text-transparent"
-                        style={{ backgroundImage: theme.text }}
-                      >
-                        {streak.streakDays}d
-                      </p>
-                      <p className="text-xs text-white/45">streak</p>
-                    </div>
-                  </div>
+            <h3 className="mt-4 text-xl font-black text-white">Creator Studio</h3>
+            <p className="mt-1 text-xs leading-5 text-white/55">
+              Manage your generative toolchain, AI models, workflow pipeline, and portfolio projects.
+            </p>
+            <span className="mt-6 inline-block text-xs font-black text-emerald-300 group-hover:underline">
+              Open Creator Studio →
+            </span>
+          </Link>
 
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-white/60">
-                      {streak.frequency === "daily"
-                        ? "Daily mandate active"
-                        : "One-time support"}
-                    </span>
-                    {streak.lastAmount && (
-                      <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-bold text-white/60">
-                        Last {streak.lastAmount}
-                      </span>
-                    )}
-                  </div>
-                </a>
-              ))}
+          {/* Brand Workspace Card */}
+          <Link
+            href="/brand"
+            className="group rounded-[2.2rem] border border-white/10 bg-black/40 p-6 transition duration-300 hover:border-white/30 hover:shadow-2xl"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-2xl">
+              🏢
             </div>
-          )}
+            <h3 className="mt-4 text-xl font-black text-white">Brand Workspace</h3>
+            <p className="mt-1 text-xs leading-5 text-white/55">
+              Structure creative briefs with AI, match against verified creators, and track engagements.
+            </p>
+            <span className="mt-6 inline-block text-xs font-black text-cyan-300 group-hover:underline">
+              Open Brand Hub →
+            </span>
+          </Link>
+        </div>
+
+        {/* Marketplace Explorer */}
+        <div className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.02] p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h4 className="font-black text-sm text-white">Discover All AI Creators</h4>
+            <p className="text-xs text-white/50">
+              Search by tools (Runway, Kling, Midjourney), skills, and commercial readiness.
+            </p>
+          </div>
+          <Link
+            href="/discover"
+            className="rounded-xl px-5 py-2.5 text-xs font-black text-white text-center"
+            style={{ background: theme.gradient }}
+          >
+            Explore Catalog →
+          </Link>
         </div>
       </section>
     </main>

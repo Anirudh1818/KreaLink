@@ -2,6 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -115,24 +116,28 @@ function LoginForm() {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        <a href="/" className="mb-6 flex items-center justify-center gap-3">
+        <Link href="/" className="mb-6 flex items-center justify-center gap-3">
           <div
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5 text-xl font-black"
             style={{
               borderColor: theme.border,
               boxShadow: `0 0 30px ${theme.glow}`,
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: theme.text }}
+            >
+              K
+            </span>
           </div>
           <h1
             className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
             style={{ backgroundImage: theme.text }}
           >
-            FanStreak
+            KreaLink
           </h1>
-        </a>
+        </Link>
 
         <form
           onSubmit={submit}

@@ -1,916 +1,375 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { themes, type ThemeKey } from "@/lib/themes";
 import { useStoredTheme } from "@/lib/use-theme";
-import { useAuth } from "@/lib/auth-context";
+import { Navbar } from "@/components/Navbar";
+import { CreatorProfile } from "@/lib/types";
+import { DEMO_CREATORS } from "@/lib/demoData";
 import { ReelTile } from "@/components/ReelTile";
 
-const features = [
-  {
-    title: "Fan Streaks",
-    description:
-      "Show up, support, repeat. Every consecutive day builds a streak that proves your loyalty — and the longer it runs, the harder your name is to ignore.",
-    icon: "🔥",
-  },
-  {
-    title: "Leaderboards",
-    description:
-      "Daily, weekly, monthly and all-time rankings turn quiet support into public standing. Climb the board and let the whole community see where you rank.",
-    icon: "🏆",
-  },
-  {
-    title: "Badges",
-    description:
-      "Earn identity badges — Early Supporter, Top Fan, Diamond Fan, Longest Streak — that live on your profile and signal exactly how real your fandom is.",
-    icon: "💎",
-  },
-  {
-    title: "Creator Recognition",
-    description:
-      "Reach the top and unlock what money alone cannot buy: shoutouts, replies, creator moments, meetups and genuine recognition from the creator you back.",
-    icon: "✨",
-  },
-];
-
-type HomeCreator = {
-  name: string;
-  username: string;
-  category: string;
-  supporters: string;
-  profilePhoto: string;
-};
-
 const reels = Array.from(
-  { length: 22 },
+  { length: 12 },
   (_, index) => `/reels/reel-${String(index + 1).padStart(2, "0")}.mp4`
 );
 
-const fallbackCreators: HomeCreator[] = [
-  {
-    name: "Samay Raina",
-    username: "samay",
-    category: "Comedy Creator",
-    supporters: "21.2K",
-    profilePhoto: "",
-  },
-  {
-    name: "Maya Fit",
-    username: "mayafit",
-    category: "Fitness Creator",
-    supporters: "6.8K",
-    profilePhoto: "",
-  },
-  {
-    name: "Aarav Live",
-    username: "aaravlive",
-    category: "Streamer",
-    supporters: "12.4K",
-    profilePhoto: "",
-  },
-];
-
-const leaderboard = [
-  { rank: "01", name: "Rohan", support: "Top Fan", streak: "30 days" },
-  { rank: "02", name: "Ishita", support: "Diamond Fan", streak: "27 days" },
-  { rank: "03", name: "Dev", support: "Loyal Fan", streak: "21 days" },
-];
-
 export default function Home() {
-  const { user } = useAuth();
-  const { activeTheme, changeTheme, theme } = useStoredTheme();
-  const [creators, setCreators] = useState<HomeCreator[]>(fallbackCreators);
-  const [waitlistEmail, setWaitlistEmail] = useState("");
-  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
-  const [waitlistMessage, setWaitlistMessage] = useState("");
-  const [showSplash, setShowSplash] = useState(true);
-  const [tileCount, setTileCount] = useState(6);
-  const [reelSlots, setReelSlots] = useState([0, 1, 2, 3, 4, 5]);
+  const { theme } = useStoredTheme();
+  const [featuredCreators, setFeaturedCreators] = useState<CreatorProfile[]>(
+    DEMO_CREATORS.slice(0, 4).map((c) => c.creator)
+  );
 
   useEffect(() => {
-    if (sessionStorage.getItem("fanstreak-splash-seen") === "true") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- skip splash if already seen this session
-      setShowSplash(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      sessionStorage.setItem("fanstreak-splash-seen", "true");
-      setShowSplash(false);
-    }, 2600);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Responsive number of background reels: 1 full reel on phones, more on
-  // larger screens.
-  useEffect(() => {
-    function computeTiles() {
-      const width = window.innerWidth;
-      // Phone: one full-screen reel (already perfect). Laptop: a few wide,
-      // full-bleed columns — fewer videos = a much smoother crossfade.
-      setTileCount(width < 640 ? 1 : width < 1024 ? 2 : 4);
-    }
-
-    computeTiles();
-    window.addEventListener("resize", computeTiles);
-    return () => window.removeEventListener("resize", computeTiles);
-  }, []);
-
-  // Keep the visible reel set sized to the screen.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs reel count to responsive tileCount
-    setReelSlots(
-      Array.from({ length: tileCount }, (_, index) => index % reels.length)
-    );
-  }, [tileCount]);
-
-  // Every 3 seconds, swap each spot to a different reel (one full reel cycles
-  // through all of them on phones; the wall rotates on laptops).
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setReelSlots((previous) =>
-        previous.map(
-          (reelIndex) => (reelIndex + previous.length) % reels.length
-        )
-      );
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [tileCount]);
-
-  useEffect(() => {
-    async function loadCreatorsFromFirestore() {
-      const snapshot = await getDocs(collection(db, "creators"));
-
-      if (snapshot.empty) {
-        setCreators(fallbackCreators);
-        return;
+    async function loadFeatured() {
+      try {
+        const snap = await getDocs(collection(db, "creators"));
+        if (!snap.empty) {
+          const loaded: CreatorProfile[] = snap.docs.slice(0, 4).map((d) => ({
+            username: d.id,
+            ...(d.data() as any),
+          }));
+          setFeaturedCreators(loaded);
+        }
+      } catch {
+        // demo creators fallback
       }
-
-      const firestoreCreators: HomeCreator[] = snapshot.docs.map((creatorDoc) => {
-        const data = creatorDoc.data();
-
-        return {
-          name: String(data.name || "Creator"),
-          username: String(data.username || creatorDoc.id),
-          category: String(data.category || "Creator"),
-          supporters: String(data.supporters || "0"),
-          profilePhoto: String(data.profilePhoto || ""),
-        };
-      });
-
-      const firestoreUsernames = new Set(
-        firestoreCreators.map((creator) => creator.username.toLowerCase())
-      );
-
-      const fallbackWithoutDuplicates = fallbackCreators.filter(
-        (creator) => !firestoreUsernames.has(creator.username.toLowerCase())
-      );
-
-      setCreators([...firestoreCreators, ...fallbackWithoutDuplicates]);
     }
-
-    loadCreatorsFromFirestore().catch((error) => {
-      console.error("Failed to load creators on home page:", error);
-      setCreators(fallbackCreators);
-    });
+    loadFeatured();
   }, []);
-
-  async function joinEarlyAccess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const cleanEmail = waitlistEmail.trim().toLowerCase();
-
-    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-      setWaitlistMessage("Please enter a valid email.");
-      return;
-    }
-
-    try {
-      setIsJoiningWaitlist(true);
-      setWaitlistMessage("");
-
-      await addDoc(collection(db, "earlyAccess"), {
-        email: cleanEmail,
-        source: "home_page",
-        createdAt: serverTimestamp(),
-      });
-
-      setWaitlistEmail("");
-      setWaitlistMessage("You are on the early access list.");
-    } catch (error) {
-      console.error("Failed to join early access:", error);
-      setWaitlistMessage("Something went wrong. Please try again.");
-    } finally {
-      setIsJoiningWaitlist(false);
-    }
-  }
-
-  const featuredCreator = creators[0] || fallbackCreators[0];
-  const featuredInitial =
-    featuredCreator.name.trim().charAt(0).toUpperCase() || "C";
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
-      <style>{`
-        @keyframes fsSplashIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
-        @keyframes fsSplashOut { to { opacity: 0; visibility: hidden; } }
-        @keyframes fsFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
-        @keyframes fsKen { 0% { transform: scale(1); } 100% { transform: scale(1.14); } }
-      `}</style>
-
-      {showSplash && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-[#050508]"
-          style={{ animation: "fsSplashOut 0.6s ease 2s forwards" }}
-        >
-          <div
-            className="flex flex-col items-center"
-            style={{ animation: "fsSplashIn 0.7s ease" }}
-          >
-            <div
-              className="flex h-24 w-24 items-center justify-center rounded-[2rem] border bg-white/5"
-              style={{
-                borderColor: theme.border,
-                boxShadow: `0 0 90px ${theme.glow}`,
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/flame.png" alt="FanStreak" className="h-14 w-14" />
-            </div>
-            <h1
-              className="mt-6 bg-clip-text text-5xl font-black tracking-tight text-transparent"
-              style={{ backgroundImage: theme.text }}
-            >
-              FanStreak
-            </h1>
-            <p className="mt-3 text-sm font-bold uppercase tracking-[0.3em] text-white/40">
-              Creator fandom &amp; status
-            </p>
-          </div>
-        </div>
-      )}
-
+    <main className="min-h-screen overflow-hidden bg-[#030306] text-white">
+      {/* Background ambient glow */}
       <div className="pointer-events-none fixed inset-0">
         <div
-          className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
-          style={{ background: theme.glow }}
+          className="absolute left-1/2 top-0 h-[600px] w-[600px] -translate-x-1/2 rounded-full blur-[140px]"
+          style={{ background: theme.glow, opacity: 0.8 }}
         />
         <div
-          className="absolute right-0 top-52 h-[320px] w-[320px] rounded-full blur-[110px]"
-          style={{ background: theme.glow, opacity: 0.35 }}
+          className="absolute right-[-100px] top-60 h-[450px] w-[450px] rounded-full blur-[120px]"
+          style={{ background: theme.glow, opacity: 0.4 }}
         />
-        <div className="absolute bottom-0 left-0 h-[360px] w-[360px] rounded-full bg-purple-700/10 blur-[110px]" />
+        <div className="absolute bottom-0 left-[-100px] h-[450px] w-[450px] rounded-full bg-cyan-600/10 blur-[130px]" />
       </div>
 
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07070a]/80 backdrop-blur-xl">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5"
+      <Navbar />
+
+      {/* HERO SECTION */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-16 pt-12 md:px-8 md:pt-20">
+        <div className="mx-auto max-w-4xl text-center">
+          {/* Journey Flow Pill */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white/60 backdrop-blur-xl">
+            <span>IDEA</span>
+            <span className="text-white/30">→</span>
+            <span>AI BRIEF</span>
+            <span className="text-white/30">→</span>
+            <span>BEST-FIT CREATOR</span>
+            <span className="text-white/30">→</span>
+            <span className="text-emerald-400">CREATE</span>
+          </div>
+
+          <h1 className="mt-8 text-5xl font-black leading-[1.02] tracking-tight md:text-7xl">
+            Hire the World&apos;s Best
+            <br />
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: theme.text }}
+            >
+              AI Content Creators.
+            </span>
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/65 md:text-xl">
+            KreaLink connects forward-thinking brands and creative agencies with elite AI filmmakers, animators, and generative artists using structured AI briefs and capability matching.
+          </p>
+
+          {/* Primary CTAs */}
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <Link
+              href="/discover"
+              className="rounded-2xl px-8 py-4 text-sm font-black text-white transition hover:scale-[1.02] active:scale-[0.98]"
               style={{
-                borderColor: theme.border,
-                boxShadow: `0 0 30px ${theme.glow}`,
+                background: theme.gradient,
+                boxShadow: `0 0 45px ${theme.glow}`,
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
+              Find AI Creators →
+            </Link>
+
+            <Link
+              href="/brand?tab=create-brief"
+              className="rounded-2xl border border-white/15 bg-white/[0.06] px-8 py-4 text-sm font-black text-white transition hover:bg-white/[0.12]"
+            >
+              🤖 Create AI Brief
+            </Link>
+
+            <Link
+              href="/join-creator"
+              className="rounded-2xl border border-white/10 bg-transparent px-6 py-4 text-sm font-bold text-white/70 transition hover:bg-white/[0.04] hover:text-white"
+            >
+              Join as Creator
+            </Link>
+          </div>
+
+          {/* Trust stats row */}
+          <div className="mt-14 grid grid-cols-2 gap-4 border-t border-white/10 pt-8 sm:grid-cols-4 text-left">
+            <div>
+              <p className="text-2xl font-black text-white">100%</p>
+              <p className="text-xs font-bold text-white/45">AI-Native Portfolios</p>
             </div>
             <div>
-              <h1
-                className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
-                style={{ backgroundImage: theme.text }}
-              >
-                FanStreak
-              </h1>
-              <p className="hidden text-xs text-white/45 sm:block">
-                Where loyalty becomes legacy.
-              </p>
+              <p className="text-2xl font-black text-white">7+ Factors</p>
+              <p className="text-xs font-bold text-white/45">Transparent Match Scoring</p>
+            </div>
+            <div>
+              <p className="text-2xl font-black text-white">Commercial Rights</p>
+              <p className="text-xs font-bold text-white/45">Clear Licensing Signals</p>
+            </div>
+            <div>
+              <p className="text-2xl font-black text-white">&lt; 30s</p>
+              <p className="text-xs font-bold text-white/45">AI Brief Generation</p>
             </div>
           </div>
-
-          <div className="hidden items-center gap-8 text-sm text-white/60 md:flex">
-            <a className="transition hover:text-white" href="#creators">
-              Creators
-            </a>
-            <a className="transition hover:text-white" href="#themes">
-              Themes
-            </a>
-            <a className="transition hover:text-white" href="#features">
-              Features
-            </a>
-            <a className="transition hover:text-white" href="#how">
-              How it works
-            </a>
-          </div>
-
-          <div className="flex items-center gap-2 md:gap-3">
-            <a
-              href={user ? "/me" : "/login"}
-              className="whitespace-nowrap rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-white/70 transition hover:bg-white/[0.08] md:rounded-2xl md:px-5 md:py-3 md:text-sm"
-            >
-              {user ? "Account" : "Sign in"}
-            </a>
-            <a
-              href="#early-access"
-              className="whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-bold text-white transition hover:scale-[1.02] md:rounded-2xl md:px-5 md:py-3 md:text-sm"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 35px ${theme.glow}`,
-              }}
-            >
-              Get Started
-            </a>
-          </div>
-        </nav>
-      </header>
-
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-20 pt-20 md:px-8 md:pb-28 md:pt-28">
-        <div className="pointer-events-none absolute left-1/2 top-0 h-full w-screen -translate-x-1/2 overflow-hidden">
-          {/* Full-bleed reel wall — no gaps, seamless across the width. */}
-          <div className="flex h-full w-full">
-            {reelSlots.map((reelIndex, slot) => (
-              <div key={slot} className="relative h-full flex-1 overflow-hidden">
-                <ReelTile src={reels[reelIndex]} />
-                {/* Feather the seam between columns so the wall reads as one
-                    continuous backdrop instead of separate videos. */}
-                {slot > 0 && (
-                  <div className="pointer-events-none absolute inset-y-0 left-0 w-16 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#050508]/35 to-transparent" />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* cinematic darkening so the reels feel ambient and the text stays crisp */}
-          <div className="absolute inset-0 bg-[#050508]/45" />
-          <div className="absolute inset-0 bg-[radial-gradient(130%_110%_at_50%_34%,transparent_0%,rgba(5,5,8,0.42)_45%,rgba(5,5,8,0.88)_100%)]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#050508] via-transparent to-[#050508]" />
         </div>
 
-        <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">
-          <div className="mb-7 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/65 shadow-2xl">
-            <span className="mr-2">✦</span>
-            FanStreak.in · fan status, earned — never bought
-          </div>
-
-          <div
-            className="mb-7 flex h-28 w-28 items-center justify-center rounded-[2.2rem] border border-white/10 bg-gradient-to-b from-white/10 to-white/[0.03]"
-            style={{ boxShadow: `0 0 90px ${theme.glow}` }}
-          >
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-[1.8rem] text-5xl"
-              style={{ background: theme.gradient }}
-            >
-              🔥
-            </div>
-          </div>
-
-          <h2 className="max-w-4xl text-5xl font-black leading-[1.02] tracking-tight text-white sm:text-6xl md:text-7xl">
-            Support your creator.
-            <br />
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: theme.text }}
-            >
-              Build your name.
-            </span>
-          </h2>
-
-          <p className="mt-7 max-w-3xl text-lg leading-8 text-white/60 md:text-2xl md:leading-10">
-            Step inside the worlds of the creators you love — where every act of
-            support builds your streak, your rank, and a name the whole community
-            remembers.
-          </p>
-
-          <div className="mt-8 flex flex-wrap justify-center gap-3 text-xs font-bold uppercase tracking-[0.18em] text-white/40">
-            {["Streaks", "Rankings", "Badges", "Recognition"].map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-
-        </div>
-      </section>
-
-      <section
-        id="features"
-        className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8"
-      >
-        <div className="max-w-3xl">
-          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Everything is built around one thing — status
-          </h2>
-          <p className="mt-4 text-lg text-white/50">
-            FanStreak turns ordinary support into a visible identity: a name, a
-            rank, and a reputation that lives inside the creator&rsquo;s
-            community.
-          </p>
-        </div>
-
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
-          {features.map((feature) => (
-            <div
-              key={feature.title}
-              className="group rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 shadow-2xl transition hover:bg-white/[0.055]"
-            >
+        {/* Ambient Video Reels Grid Banner */}
+        <div className="mt-16 overflow-hidden rounded-[2.6rem] border border-white/10 bg-black/40 p-3 shadow-2xl backdrop-blur-xl">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            {reels.slice(0, 6).map((src, i) => (
               <div
-                className="mb-10 flex h-14 w-14 items-center justify-center rounded-2xl text-3xl"
-                style={{ background: theme.softGradient }}
+                key={src}
+                className="relative aspect-[9/16] overflow-hidden rounded-2xl bg-black/60 shadow-lg"
               >
-                {feature.icon}
+                <ReelTile src={src} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                <span className="absolute bottom-2.5 left-2.5 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-bold text-white/80 backdrop-blur-md">
+                  AI Reel 0{i + 1}
+                </span>
               </div>
-              <h3 className="text-3xl font-black">{feature.title}</h3>
-              <p className="mt-4 max-w-xl text-lg leading-8 text-white/55">
-                {feature.description}
-              </p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
-      <section
-        id="creators"
-        className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 gap-8 px-5 py-16 md:grid-cols-[1fr_0.85fr] md:px-8"
-      >
-        <div>
-          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Creator pages built to convert
+      {/* 4-STEP MARKETPLACE WORKFLOW */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/50">
+            End-to-End Workflow
+          </div>
+          <h2 className="mt-3 text-3xl font-black md:text-5xl">
+            How KreaLink Works
           </h2>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Every creator gets a personal FanStreak link. Fans open the link,
-            choose their support amount, complete payment, and start building
-            their rank.
+          <p className="mx-auto mt-2 max-w-xl text-sm text-white/55">
+            From natural-language ideation to verified creator engagement in minutes.
           </p>
+        </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-4">
-            {creators.map((creator) => (
-              <a
-                key={creator.username}
-                href={`/${creator.username}`}
-                className="flex items-center justify-between rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5 transition hover:bg-white/[0.06]"
-              >
-                <div className="flex items-center gap-4">
+        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-[2.2rem] border border-white/10 bg-black/35 p-6 backdrop-blur-md">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-2xl">
+              💡
+            </span>
+            <span className="mt-4 block text-xs font-black uppercase tracking-wider text-white/40">
+              Step 01
+            </span>
+            <h3 className="mt-1 text-xl font-black text-white">Describe Your Vision</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              Enter a rough campaign idea. Our AI Brief Builder structures requirements, aspect ratios, style tags, and commercial terms.
+            </p>
+          </div>
+
+          <div className="rounded-[2.2rem] border border-white/10 bg-black/35 p-6 backdrop-blur-md">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-2xl">
+              ⚡
+            </span>
+            <span className="mt-4 block text-xs font-black uppercase tracking-wider text-white/40">
+              Step 02
+            </span>
+            <h3 className="mt-1 text-xl font-black text-white">Explainable Matching</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              Our 7-factor engine ranks creators by skills, tools, models, format, and commercial capability — with clear &quot;Why this creator?&quot; insights.
+            </p>
+          </div>
+
+          <div className="rounded-[2.2rem] border border-white/10 bg-black/35 p-6 backdrop-blur-md">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-2xl">
+              🎨
+            </span>
+            <span className="mt-4 block text-xs font-black uppercase tracking-wider text-white/40">
+              Step 03
+            </span>
+            <h3 className="mt-1 text-xl font-black text-white">Inspect AI Portfolios</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              Evaluate verified toolchains (Runway, Midjourney, Kling, ComfyUI), production workflows, and past commercial deliverables.
+            </p>
+          </div>
+
+          <div className="rounded-[2.2rem] border border-white/10 bg-black/35 p-6 backdrop-blur-md">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-2xl">
+              🤝
+            </span>
+            <span className="mt-4 block text-xs font-black uppercase tracking-wider text-white/40">
+              Step 04
+            </span>
+            <h3 className="mt-1 text-xl font-black text-white">Invite &amp; Engage</h3>
+            <p className="mt-2 text-xs leading-5 text-white/55">
+              Send brief invitations with one click. Creators accept inside Creator Studio, and your campaign production begins immediately.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURED CREATORS SECTION */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/50">
+              Elite Talent
+            </div>
+            <h2 className="mt-2 text-3xl font-black md:text-5xl">
+              Featured AI Creators
+            </h2>
+            <p className="mt-1 text-sm text-white/55">
+              Specialized across commercial spots, 9:16 vertical motion, VFX, and luxury aesthetics.
+            </p>
+          </div>
+
+          <Link
+            href="/discover"
+            className="rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/[0.1]"
+          >
+            View All Creators →
+          </Link>
+        </div>
+
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {featuredCreators.map((c) => (
+            <Link
+              key={c.username}
+              href={`/${c.username}`}
+              className="group flex flex-col justify-between rounded-[2.2rem] border border-white/10 bg-black/40 p-6 backdrop-blur-md transition duration-300 hover:border-white/30 hover:shadow-2xl"
+            >
+              <div>
+                <div className="flex items-center gap-3">
                   <div
-                    className="flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-black"
+                    className="flex h-14 w-14 items-center justify-center rounded-2xl font-black text-lg p-[2px]"
                     style={{ background: theme.gradient }}
                   >
-                    {creator.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-black">{creator.name}</h3>
-                    <p className="text-sm text-white/45">{creator.category}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p
-                    className="bg-clip-text font-black text-transparent"
-                    style={{ backgroundImage: theme.text }}
-                  >
-                    {creator.supporters}
-                  </p>
-                  <p className="text-xs text-white/45">supporters</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[2.2rem] border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.025] p-6 shadow-2xl">
-          <div className="rounded-[1.7rem] border border-white/10 bg-black/35 p-6">
-            <div className="flex items-center gap-4">
-              <div
-                className="h-20 w-20 rounded-3xl p-[3px]"
-                style={{ background: theme.gradient }}
-              >
-                <div className="flex h-full w-full items-center justify-center rounded-[1.35rem] bg-[#111116] text-3xl font-black">
-                  {featuredInitial}
-                </div>
-              </div>
-              <div>
-                <h3 className="text-2xl font-black">{featuredCreator.name}</h3>
-                <p className="text-white/45">
-                  fanstreak.in/{featuredCreator.username}
-                </p>
-              </div>
-            </div>
-
-            <a
-              href={`/${featuredCreator.username}`}
-              className="mt-7 block w-full rounded-2xl py-4 text-center font-black"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 35px ${theme.glow}`,
-              }}
-            >
-              Support creator
-            </a>
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p
-                  className="bg-clip-text text-2xl font-black text-transparent"
-                  style={{ backgroundImage: theme.text }}
-                >
-                  {featuredCreator.supporters}
-                </p>
-                <p className="text-sm text-white/45">Supporters</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p
-                  className="bg-clip-text text-2xl font-black text-transparent"
-                  style={{ backgroundImage: theme.text }}
-                >
-                  103d
-                </p>
-                <p className="text-sm text-white/45">Top streak</p>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <h4 className="mb-3 font-black">Weekly leaderboard</h4>
-              <div className="space-y-3">
-                {leaderboard.map((fan) => (
-                  <div
-                    key={fan.rank}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="flex h-9 w-9 items-center justify-center rounded-xl text-sm font-black"
-                        style={{ background: theme.gradient }}
-                      >
-                        {fan.rank}
-                      </span>
-                      <div>
-                        <p className="font-bold">{fan.name}</p>
-                        <p className="text-xs text-white/45">{fan.streak}</p>
-                      </div>
+                    <div className="flex h-full w-full items-center justify-center rounded-[0.8rem] bg-[#121217]">
+                      {c.profilePhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.profilePhoto}
+                          alt={c.name}
+                          className="h-full w-full rounded-[0.8rem] object-cover"
+                        />
+                      ) : (
+                        c.name.charAt(0)
+                      )}
                     </div>
-                    <p className="font-black text-white">{fan.support}</p>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
-        <div className="max-w-3xl">
-          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
-            Built for everyone
-          </p>
-          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Two sides. One community.
-          </h2>
-          <p className="mt-5 text-lg leading-8 text-white/55">
-            Fans get a place to be seen. Creators get a way to turn that
-            attention into income — no ads, no algorithm, no noise.
-          </p>
-        </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate font-black text-white group-hover:underline">
+                      {c.name}
+                    </h3>
+                    <p className="truncate text-xs font-bold text-white/40">
+                      @{c.username}
+                    </p>
+                  </div>
+                </div>
 
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2">
-          {[
-            {
-              eyebrow: "For fans",
-              icon: "🔥",
-              headline: "Turn your support into a status symbol.",
-              points: [
-                "Build a public streak and rank that is unmistakably yours.",
-                "Unlock badges and a shareable fan identity others can see.",
-                "Get noticed by the creators you actually care about.",
-              ],
-            },
-            {
-              eyebrow: "For creators",
-              icon: "💼",
-              headline: "Turn your most loyal fans into real income.",
-              points: [
-                "A personal page that converts attention into recurring support.",
-                "See who your top fans are — by streak, loyalty and value.",
-                "Reward them with recognition that deepens the bond.",
-              ],
-            },
-          ].map((side) => (
-            <div
-              key={side.eyebrow}
-              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-8 shadow-2xl"
-            >
-              <div
-                className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl text-3xl"
-                style={{ background: theme.softGradient }}
-              >
-                {side.icon}
-              </div>
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                {side.eyebrow}
-              </p>
-              <h3 className="mt-2 text-3xl font-black">{side.headline}</h3>
+                <p className="mt-3 text-xs font-bold text-emerald-300">
+                  {c.specialization}
+                </p>
 
-              <div className="mt-6 space-y-3">
-                {side.points.map((point) => (
-                  <div
-                    key={point}
-                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/25 p-4"
-                  >
+                <p className="mt-2 text-xs leading-5 text-white/55 line-clamp-2">
+                  {c.bio}
+                </p>
+
+                <div className="mt-4 flex flex-wrap gap-1">
+                  {[...(c.aiTools || []), ...(c.aiModels || [])].slice(0, 3).map((t) => (
                     <span
-                      className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: theme.gradient }}
-                    />
-                    <p className="leading-7 text-white/70">{point}</p>
-                  </div>
-                ))}
+                      key={t}
+                      className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold text-white/70"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+
+              <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-3 text-[11px] font-bold text-white/50">
+                <span>{c.commercialUse ? "⚡ Commercial Ready" : "Personal"}</span>
+                <span className="text-white group-hover:translate-x-1 transition">
+                  Profile →
+                </span>
+              </div>
+            </Link>
           ))}
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto max-w-7xl px-5 py-16 md:px-8">
-        <div className="max-w-3xl">
-          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
-            The idea
-          </p>
-          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Why FanStreak works
-          </h2>
-        </div>
+      {/* CALL TO ACTION BANNER */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 py-20 md:px-8">
+        <div
+          className="relative overflow-hidden rounded-[2.8rem] p-[1px]"
+          style={{ background: theme.gradient, boxShadow: `0 0 100px ${theme.glow}` }}
+        >
+          <div className="relative rounded-[2.75rem] border border-white/10 bg-[#08060d] px-8 py-14 text-center md:px-16 md:py-20">
+            <h2 className="text-4xl font-black tracking-tight md:text-6xl">
+              Ready to launch your next AI campaign?
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-white/60 md:text-lg">
+              Start with a natural-language brief or browse capability-verified AI creators ready for commercial work.
+            </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
-          {[
-            {
-              title: "Recognition beats reach",
-              body: "People don't just want to watch creators — they want to be seen by them. FanStreak makes that visible, and earnable.",
-            },
-            {
-              title: "Loyalty you can measure",
-              body: "Streaks, ranks and badges turn a vague feeling of fandom into something real, public, and worth competing for.",
-            },
-            {
-              title: "Status compounds",
-              body: "The longer a fan stays, the more they have built — so they keep coming back to protect a name that is now truly theirs.",
-            },
-          ].map((pillar) => (
-            <div
-              key={pillar.title}
-              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-7 shadow-2xl"
-            >
-              <h3 className="text-2xl font-black">{pillar.title}</h3>
-              <p className="mt-4 leading-8 text-white/55">{pillar.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section
-        id="how"
-        className="relative z-10 mx-auto max-w-5xl px-5 py-20 text-center md:px-8"
-      >
-        <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-          Start in under a minute
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-white/55">
-          No setup, no maze. Find a creator, back them, and your fan identity
-          starts building from day one.
-        </p>
-
-        <div className="mt-12 grid grid-cols-1 gap-6 text-left md:grid-cols-3">
-          {[
-            {
-              number: "1",
-              title: "Find your creator",
-              body: "Open any creator's FanStreak link from their bio, story, or our explore page.",
-            },
-            {
-              number: "2",
-              title: "Start supporting",
-              body: "Pick your amount, confirm, and your streak goes live the moment you support.",
-            },
-            {
-              number: "3",
-              title: "Climb ranks",
-              body: "Keep your streak alive to earn badges, climb the leaderboard, and get noticed.",
-            },
-          ].map((step) => (
-            <div
-              key={step.number}
-              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-7"
-            >
-              <div
-                className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl text-xl font-black"
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+              <Link
+                href="/brand?tab=create-brief"
+                className="rounded-2xl px-8 py-4 text-sm font-black text-white transition hover:scale-105"
                 style={{ background: theme.gradient }}
               >
-                {step.number}
-              </div>
-              <h3 className="text-2xl font-black">{step.title}</h3>
-              <p className="mt-4 leading-7 text-white/50">{step.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="relative z-10 mx-auto max-w-4xl px-5 py-16 md:px-8">
-        <div className="text-center">
-          <p className="mb-4 text-sm font-black uppercase tracking-[0.25em] text-white/40">
-            FAQ
-          </p>
-          <h2 className="text-4xl font-black tracking-tight md:text-5xl">
-            Questions, answered
-          </h2>
-        </div>
-
-        <div className="mx-auto mt-10 grid max-w-3xl grid-cols-1 gap-4">
-          {[
-            {
-              q: "What exactly is FanStreak?",
-              a: "A loyalty platform where fans support their favourite creators and earn visible status — streaks, ranks and badges — inside that creator's community.",
-            },
-            {
-              q: "How does a fan build a streak?",
-              a: "Every day you support a creator, your streak grows by one. Miss a day and it resets — so showing up consistently is what carries you to the top.",
-            },
-            {
-              q: "What do creators get out of it?",
-              a: "A premium page that turns followers into paying, recurring supporters, plus a clear view of who their most valuable fans really are.",
-            },
-            {
-              q: "Is it safe to pay?",
-              a: "Yes. Payments run on secure, consented UPI mandates — with a reminder before every charge and one-tap cancel. Nothing hidden, ever.",
-            },
-          ].map((item) => (
-            <div
-              key={item.q}
-              className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6"
-            >
-              <h3 className="text-xl font-black">{item.q}</h3>
-              <p className="mt-3 leading-8 text-white/55">{item.a}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section
-        id="early-access"
-        className="relative z-10 mx-auto max-w-5xl px-5 py-20 text-center md:px-8"
-      >
-        <div
-          className="rounded-[2.5rem] border border-white/10 bg-white/[0.035] p-6 md:p-10"
-          style={{ boxShadow: `0 0 80px ${theme.glow}` }}
-        >
-          <p className="text-sm font-black uppercase tracking-[0.25em] text-white/40">
-            Early access
-          </p>
-
-          <h2 className="mt-4 text-4xl font-black tracking-tight md:text-6xl">
-            Get early access
-            <br />
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: theme.text }}
-            >
-              before public launch.
-            </span>
-          </h2>
-
-          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Join the waitlist for launch updates, creator drops, and early
-            access when FanStreak opens publicly.
-          </p>
-
-          <form
-            onSubmit={joinEarlyAccess}
-            className="mx-auto mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row"
-          >
-            <input
-              value={waitlistEmail}
-              onChange={(event) => setWaitlistEmail(event.target.value)}
-              type="email"
-              placeholder="you@email.com"
-              className="min-h-14 flex-1 rounded-2xl border border-white/10 bg-black/30 px-5 font-bold text-white outline-none placeholder:text-white/30 focus:border-white/25"
-            />
-
-            <button
-              type="submit"
-              disabled={isJoiningWaitlist}
-              className="min-h-14 rounded-2xl px-7 font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 35px ${theme.glow}`,
-              }}
-            >
-              {isJoiningWaitlist ? "Joining..." : "Join waitlist"}
-            </button>
-          </form>
-
-          {waitlistMessage && (
-            <p className="mt-4 text-sm font-bold text-white/55">
-              {waitlistMessage}
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section
-        id="themes"
-        className="relative z-10 mx-auto max-w-5xl px-5 pb-16 text-center md:px-8"
-      >
-        <p className="text-sm font-black uppercase tracking-[0.25em] text-white/40">
-          Get started
-        </p>
-        <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">
-          Claim your place in the fandom.
-        </h2>
-
-        <div className="mx-auto mt-8 flex w-full max-w-xl flex-col gap-4 sm:flex-row">
-          <a
-            href="#creators"
-            className="flex-1 rounded-2xl px-7 py-4 text-base font-black text-white transition hover:scale-[1.02]"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 45px ${theme.glow}`,
-            }}
-          >
-            Explore creators →
-          </a>
-          <a
-            href="/join-creator"
-            className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-bold text-white transition hover:bg-white/[0.07]"
-          >
-            Join as Creator
-          </a>
-        </div>
-
-        <div className="mt-10 w-full rounded-[2rem] border border-white/10 bg-black/25 p-4 text-left">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="text-left">
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                Theme switcher
-              </p>
-              <p className="mt-2 text-lg font-black">
-                Choose your FanStreak look
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              {(Object.keys(themes) as ThemeKey[]).map((key) => {
-                const item = themes[key];
-                const active = activeTheme === key;
-
-                return (
-                  <button
-                    key={key}
-                    onClick={() => changeTheme(key)}
-                    className={`rounded-2xl border px-4 py-3 text-left transition ${
-                      active
-                        ? "bg-white/[0.09] text-white"
-                        : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06]"
-                    }`}
-                    style={{
-                      borderColor: active ? item.border : undefined,
-                      boxShadow: active ? `0 0 25px ${item.glow}` : undefined,
-                    }}
-                  >
-                    <span
-                      className="mb-2 block h-3 w-full rounded-full"
-                      style={{ background: item.gradient }}
-                    />
-                    <span className="block text-sm font-black">{item.name}</span>
-                    <span className="text-xs text-white/35">{item.label}</span>
-                  </button>
-                );
-              })}
+                Create an AI Brief →
+              </Link>
+              <Link
+                href="/discover"
+                className="rounded-2xl border border-white/15 bg-white/[0.06] px-8 py-4 text-sm font-black text-white hover:bg-white/[0.12]"
+              >
+                Browse Marketplace
+              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/10 px-5 py-10 md:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 md:flex-row md:items-center">
-          <div>
-            <h2
-              className="bg-clip-text text-2xl font-black text-transparent"
-              style={{ backgroundImage: theme.text }}
-            >
-              FanStreak
-            </h2>
-            <p className="mt-2 text-sm text-white/45">
-              FanStreak — where fandom earns its name.
-            </p>
+      {/* FOOTER */}
+      <footer className="relative z-10 border-t border-white/10 bg-[#050508] px-5 py-12 md:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sm font-black">
+              K
+            </div>
+            <div>
+              <p className="font-black text-white">KreaLink</p>
+              <p className="text-[11px] text-white/40">AI Content Creator Marketplace</p>
+            </div>
           </div>
 
-          <div className="flex gap-6 text-sm text-white/45">
-            <a href="#features">About</a>
-            <a href="#creators">Creators</a>
-            <a href="#themes">Themes</a>
-            <a href="#early-access">Early Access</a>
+          <div className="flex flex-wrap items-center gap-6 text-xs font-bold text-white/60">
+            <Link href="/discover" className="hover:text-white">Discover</Link>
+            <Link href="/brand" className="hover:text-white">Brand Hub</Link>
+            <Link href="/creator-studio" className="hover:text-white">Creator Studio</Link>
+            <Link href="/join-creator" className="hover:text-white">Join as Creator</Link>
+            <Link href="/choose-role" className="hover:text-white">Choose Role</Link>
           </div>
+
+          <p className="text-xs text-white/35">
+            Kampus.VC Hackathon · KreaLink 2026
+          </p>
         </div>
       </footer>
     </main>
