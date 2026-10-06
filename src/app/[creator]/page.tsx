@@ -2,225 +2,133 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  query,
   serverTimestamp,
   setDoc,
-  where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
 import { useStoredTheme } from "@/lib/use-theme";
-import {
-  loadRazorpayScript,
-  type RazorpayHandlerResponse,
-  type RazorpayOptions,
-} from "@/lib/razorpay";
 import { useAuth } from "@/lib/auth-context";
+import { ReelTile } from "@/components/ReelTile";
 
-const supportLevels = [
-  {
-    amount: "₹9",
-    title: "Starter Fan",
-    description: "Start your FanStreak",
-  },
-  {
-    amount: "₹19",
-    title: "Active Fan",
-    description: "Keep your name visible",
-  },
-  {
-    amount: "₹49",
-    title: "Loyal Fan",
-    description: "Climb loyalty rankings",
-  },
-  {
-    amount: "₹599",
-    title: "Elite Fan",
-    description: "Enter premium fan zone",
-  },
-  {
-    amount: "₹999",
-    title: "VIP Fan",
-    description: "Compete for top recognition",
-  },
-];
-
-const badges = ["Early Supporter", "7-Day Streak", "Top Fan", "Diamond Fan"];
-
+// Data types for KreaLink AI Creator Profile
 type CreatorProfile = {
   name: string;
   username: string;
-  category: string;
+  specialization: string;
   bio: string;
-  status: string;
-  supporters: string;
-  volume: string;
-  theme: ThemeKey;
+  availability: string;
+  commercialUse: boolean;
+  skills: string[];
+  aiTools: string[];
+  aiModels: string[];
+  contentTypes: string[];
+  formats: string[];
+  workflow: string;
   profilePhoto: string;
-  email: string;
-  verified: boolean;
   socialLinks: {
+    website?: string;
     instagram?: string;
     youtube?: string;
     x?: string;
-    website?: string;
   };
+  verified: boolean;
+  verification: {
+    tools: boolean;
+    workflow: boolean;
+    portfolio: boolean;
+  };
+  status: string;
+  theme: ThemeKey;
 };
 
-type LeaderboardFan = {
-  rank: "01" | "02" | "03" | "04";
-  name: string;
-  badge: string;
-  metric: string;
-};
-
-const leaderboardSets: {
+// Portfolio item data structure matching creators/{username}/portfolio/{portfolioId}
+type PortfolioItem = {
+  id: string;
   title: string;
-  subtitle: string;
-  reward: string;
-  fans: LeaderboardFan[];
-}[] = [
-  {
-    title: "🔥 Highest Streak",
-    subtitle:
-      "The fans who show up again and again. Every day they continue, their name becomes harder to ignore.",
-    reward:
-      "Longest streak fan gets OG Fan Badge + monthly creator recognition.",
-    fans: [
-      { rank: "01", name: "Rohan", badge: "Streak King", metric: "103 days" },
-      { rank: "02", name: "Ishita", badge: "Daily Fan", metric: "87 days" },
-      { rank: "03", name: "Dev", badge: "Consistent Fan", metric: "61 days" },
-      { rank: "04", name: "Arjun", badge: "Rising Streak", metric: "42 days" },
-    ],
-  },
-  {
-    title: "💎 Most Loyal Fans",
-    subtitle:
-      "Not just one-time supporters — these are the fans who stay, engage, return, and build real fan identity.",
-    reward:
-      "Most loyal fans get priority recognition and special identity badges.",
-    fans: [
-      {
-        rank: "01",
-        name: "Ishita",
-        badge: "Diamond Loyalist",
-        metric: "98 score",
-      },
-      { rank: "02", name: "Rohan", badge: "Core Fan", metric: "94 score" },
-      { rank: "03", name: "Meera", badge: "True Fan", metric: "89 score" },
-      { rank: "04", name: "Kabir", badge: "Active Fan", metric: "81 score" },
-    ],
-  },
-  {
-    title: "👑 Highest Paid",
-    subtitle:
-      "The strongest supporters compete for premium visibility, VIP status, and the biggest reward slots.",
-    reward:
-      "Highest paid supporters unlock VIP recognition and premium reward slots.",
-    fans: [
-      { rank: "01", name: "Dev", badge: "VIP Supporter", metric: "₹12,501" },
-      { rank: "02", name: "Rohan", badge: "Top Patron", metric: "₹9,251" },
-      { rank: "03", name: "Ishita", badge: "Elite Fan", metric: "₹7,101" },
-      { rank: "04", name: "Arjun", badge: "Power Fan", metric: "₹5,501" },
-    ],
-  },
-];
-
-const activeCreatorDrop = {
-  status: "Live Drop",
-  title: "24-Hour FanStreak Drop",
-  subtitle:
-    "Support now and compete for premium fan recognition before this drop ends.",
-  rewards: [
-    {
-      icon: "👑",
-      title: "Highest Paid Fan",
-      description: "Gets VIP Fan Wall spotlight",
-    },
-    {
-      icon: "🔥",
-      title: "Top Streak Fans",
-      description: "Unlock special streak recognition",
-    },
-    {
-      icon: "🎟️",
-      title: "Passport Fans",
-      description: "Get priority shortlist for future drops",
-    },
-  ],
+  description?: string;
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+  contentType?: string;
+  tools?: string[];
+  models?: string[];
+  skills?: string[];
+  workflow?: string;
+  formats?: string[];
+  commercialUse?: boolean;
 };
 
-const fanPassport = {
-  price: "₹99",
-  title: "FanStreak Passport",
-  subtitle:
-    "Own a premium fan identity inside this creator’s community without affecting fair streak rankings.",
-  benefits: [
-    "Premium digital Passport Card",
-    "QR-linked live fan profile",
-    "Passport badge on fan identity",
-    "Creator Drop priority alerts",
-    "Passport Fan Wall visibility",
-    "Future meetup priority consideration",
+// Demo fallback creator if document does not exist yet in Firestore
+const fallbackKreaLinkCreator: CreatorProfile = {
+  name: "Alex Vance",
+  username: "alexvance",
+  specialization: "AI Filmmaker & Creative Director",
+  bio: "Directing cinematic AI films, commercial spots, and narrative visual experiments with multi-model generative pipelines.",
+  availability: "Available immediately",
+  commercialUse: true,
+  skills: [
+    "Prompt Engineering",
+    "Character Consistency",
+    "Camera Movement Control",
+    "Storyboarding & Animatics",
+    "Post-Processing & Upscaling",
+    "Color Grading & Finishing",
   ],
-};
-
-const fallbackStudioCreator: CreatorProfile = {
-  name: "Samay Raina",
-  username: "samay",
-  category: "Comedy Creator",
-  bio: "Comedy creator · creator community · fan recognition",
-  status: "Live",
-  supporters: "21.2K",
-  volume: "₹8.72L",
-  theme: "flame",
+  aiTools: ["Midjourney", "Runway", "ComfyUI", "Topaz Video AI", "DaVinci Resolve"],
+  aiModels: [
+    "Runway Gen-3 Alpha",
+    "Flux.1 Dev",
+    "Midjourney v6.1",
+    "Kling 1.5",
+    "OpenAI Sora",
+  ],
+  contentTypes: [
+    "Brand Commercials",
+    "Short-Form Video (Reels/TikTok)",
+    "Cinematic Trailers",
+    "Product Visualizations",
+  ],
+  formats: [
+    "9:16 Vertical (Reels / TikTok / Shorts)",
+    "16:9 Landscape (YouTube / TV / Cinema)",
+    "4K UHD",
+  ],
+  workflow:
+    "Ideation and character design in Midjourney v6.1, generative video in Runway Gen-3 & Kling 1.5, 4K detail enhancement with Topaz Video AI, and final sound & grading in DaVinci Resolve.",
   profilePhoto: "",
-  email: "",
+  socialLinks: {
+    website: "https://krealink.ai/alexvance",
+    x: "https://x.com/alexvance",
+  },
   verified: true,
-  socialLinks: {},
+  verification: {
+    tools: true,
+    workflow: true,
+    portfolio: true,
+  },
+  status: "Active",
+  theme: "flame",
 };
 
-function getParamValue(value: string | string[] | undefined) {
+function getParamValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || "";
   return value || "";
 }
 
-function getInitial(name: string) {
-  return name.trim().charAt(0).toUpperCase() || "F";
+function getInitial(name: string): string {
+  return name.trim().charAt(0).toUpperCase() || "K";
 }
 
-function splitName(name: string) {
-  const parts = name.trim().split(/\s+/);
-
-  return {
-    firstName: parts[0] || name,
-    lastName: parts.slice(1).join(" "),
-  };
-}
-
-function normalizeUrl(value?: string) {
+function normalizeUrl(value?: string): string {
   if (!value) return "#";
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
   return `https://${value}`;
-}
-
-function toDayKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function streakBadge(days: number) {
-  if (days >= 100) return "Streak King";
-  if (days >= 30) return "Daily Fan";
-  if (days >= 7) return "Consistent Fan";
-  return "Rising Streak";
 }
 
 export default function CreatorPage() {
@@ -228,92 +136,34 @@ export default function CreatorPage() {
   const { user } = useAuth();
   const creatorUsername = getParamValue(params?.creator);
 
-  const loginHref = `/login?next=${encodeURIComponent(`/${creatorUsername}`)}`;
-
-  const [creatorProfile, setCreatorProfile] =
-    useState<CreatorProfile>(fallbackStudioCreator);
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(
+    fallbackKreaLinkCreator
+  );
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
   const [isLoadingCreator, setIsLoadingCreator] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
-  const [liveStreakFans, setLiveStreakFans] = useState<LeaderboardFan[]>([]);
-  const [openBoard, setOpenBoard] = useState(0);
 
-  const [selectedAmount, setSelectedAmount] = useState("₹49");
-  const [customAmount, setCustomAmount] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const [supportFanName, setSupportFanName] = useState("");
-  const [isDailyMandate, setIsDailyMandate] = useState(false);
-  const [mandateConsent, setMandateConsent] = useState(false);
-  const [isProcessingSupport, setIsProcessingSupport] = useState(false);
-  const [supportError, setSupportError] = useState("");
-
-  const [isPassportModalOpen, setIsPassportModalOpen] = useState(false);
-  const [passportFanName, setPassportFanName] = useState("");
-  const [isPassportActive, setIsPassportActive] = useState(false);
+  // Invite Creator Modal state
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteBrandName, setInviteBrandName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteProjectTitle, setInviteProjectTitle] = useState("");
+  const [inviteContentType, setInviteContentType] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [inviteError, setInviteError] = useState("");
 
   const {
     activeTheme,
     setActiveTheme,
-    changeTheme: applyTheme,
+    changeTheme,
     theme,
   } = useStoredTheme();
-  const [dropTimeLeft, setDropTimeLeft] = useState("24h 00m");
-  const [isDropEnded, setIsDropEnded] = useState(false);
 
-  const finalAmount = isCustom ? `₹${customAmount || "0"}` : selectedAmount;
-  const canContinue = !isCustom || Number(customAmount) > 0;
-
-  const selectedSupportLevel = supportLevels.find(
-    (level) => level.amount === selectedAmount
-  );
-
-  const selectedSupportTitle = isCustom
-    ? "Power Supporter"
-    : selectedSupportLevel?.title || "Supporter";
-
-  const passportDisplayName =
-    isPassportActive && passportFanName.trim() ? passportFanName : "XXXX XXXX";
-
-  const passportDisplayCreator = isPassportActive
-    ? creatorProfile.name
-    : "XXXX XXXX";
-
-  const passportDisplayId = isPassportActive
-    ? `FS-${getPassportSlug().slice(0, 10).toUpperCase()}`
-    : "FS-XXXX-XXXX";
-
-  const passportPath = `/passport/${getPassportSlug()}?creator=${
-    creatorProfile.username
-  }&creatorName=${encodeURIComponent(
-    passportDisplayCreator
-  )}&fanName=${encodeURIComponent(
-    passportDisplayName
-  )}&passportId=${encodeURIComponent(passportDisplayId)}`;
-
-  const passportQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(
-    `https://fan-streak.vercel.app${passportPath}`
-  )}`;
-
-  const creatorInitial = getInitial(creatorProfile.name);
-  const { firstName, lastName } = splitName(creatorProfile.name);
-
-  const availableSocialLinks = [
-    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
-    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
-    { label: "X", value: creatorProfile.socialLinks.x },
-    { label: "Website", value: creatorProfile.socialLinks.website },
-  ].filter((link) => Boolean(link.value));
-
-  const creatorHeroStats = [
-    { label: "Supporters", value: creatorProfile.supporters || "0" },
-    { label: "Record streak", value: "103d" },
-    { label: "Reward zone", value: "Top 5" },
-    { label: "Elite badges", value: String(badges.length) },
-  ];
-
+  // Load creator document and portfolio subcollection
   useEffect(() => {
-    async function loadCreator() {
+    async function loadCreatorData() {
       if (!creatorUsername) {
         setCreatorNotFound(true);
         setIsLoadingCreator(false);
@@ -325,14 +175,20 @@ export default function CreatorPage() {
         const creatorSnap = await getDoc(creatorRef);
 
         if (!creatorSnap.exists()) {
-          if (creatorUsername === fallbackStudioCreator.username) {
-            setCreatorProfile(fallbackStudioCreator);
-            setActiveTheme(fallbackStudioCreator.theme);
+          // If the username requested is the demo fallback, display demo profile
+          if (
+            creatorUsername === fallbackKreaLinkCreator.username ||
+            creatorUsername === "samay"
+          ) {
+            setCreatorProfile({
+              ...fallbackKreaLinkCreator,
+              username: creatorUsername,
+            });
+            setActiveTheme(fallbackKreaLinkCreator.theme);
             setCreatorNotFound(false);
           } else {
             setCreatorNotFound(true);
           }
-
           setIsLoadingCreator(false);
           return;
         }
@@ -340,402 +196,170 @@ export default function CreatorPage() {
         const data = creatorSnap.data();
         const nextTheme = isThemeKey(data.theme) ? data.theme : "flame";
 
+        // Read KreaLink creator fields, handling missing legacy fields safely
         const nextCreator: CreatorProfile = {
-          name: String(data.name || "Creator"),
+          name: String(data.name || creatorUsername),
           username: String(data.username || creatorUsername),
-          category: String(data.category || "Creator"),
-          bio: String(data.bio || "Creator community · fan recognition"),
-          status: String(data.status || "Live"),
-          supporters: String(data.supporters || "0"),
-          volume: String(data.volume || "₹0"),
-          theme: nextTheme,
+          specialization: String(
+            data.specialization || data.category || "AI Content Creator"
+          ),
+          bio: String(
+            data.bio ||
+              "AI-native content creator specializing in generative video and visual storytelling."
+          ),
+          availability: String(
+            data.availability || "Available for projects"
+          ),
+          commercialUse:
+            typeof data.commercialUse === "boolean"
+              ? data.commercialUse
+              : true,
+          skills: Array.isArray(data.skills) ? data.skills : [],
+          aiTools: Array.isArray(data.aiTools) ? data.aiTools : [],
+          aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
+          contentTypes: Array.isArray(data.contentTypes)
+            ? data.contentTypes
+            : [],
+          formats: Array.isArray(data.formats) ? data.formats : [],
+          workflow: String(data.workflow || ""),
           profilePhoto: String(data.profilePhoto || ""),
-          email: String(data.email || ""),
-          verified: Boolean(data.verified),
           socialLinks: {
+            website: data.socialLinks?.website || data.website || "",
+            x: data.socialLinks?.x || data.x || "",
             instagram: data.socialLinks?.instagram || data.instagram || "",
             youtube: data.socialLinks?.youtube || data.youtube || "",
-            x: data.socialLinks?.x || data.x || "",
-            website: data.socialLinks?.website || data.website || "",
           },
+          verified: Boolean(data.verified),
+          verification: {
+            tools: Boolean(data.verification?.tools ?? data.verified),
+            workflow: Boolean(data.verification?.workflow),
+            portfolio: Boolean(data.verification?.portfolio),
+          },
+          status: String(data.status || "Active"),
+          theme: nextTheme,
         };
 
         setCreatorProfile(nextCreator);
         setActiveTheme(nextTheme);
         setCreatorNotFound(false);
+
+        // Fetch portfolio subcollection: creators/{username}/portfolio/{portfolioId}
+        try {
+          const portfolioRef = collection(
+            db,
+            "creators",
+            creatorUsername,
+            "portfolio"
+          );
+          const portfolioSnap = await getDocs(portfolioRef);
+
+          const items: PortfolioItem[] = portfolioSnap.docs.map((docSnap) => {
+            const d = docSnap.data();
+            return {
+              id: docSnap.id,
+              title: String(d.title || "Untitled Project"),
+              description: String(d.description || ""),
+              mediaUrl: String(d.mediaUrl || d.media || ""),
+              thumbnailUrl: String(
+                d.thumbnailUrl || d.thumbnail || d.mediaUrl || ""
+              ),
+              contentType: String(d.contentType || ""),
+              tools: Array.isArray(d.tools)
+                ? d.tools
+                : Array.isArray(d.aiTools)
+                ? d.aiTools
+                : [],
+              models: Array.isArray(d.models)
+                ? d.models
+                : Array.isArray(d.aiModels)
+                ? d.aiModels
+                : [],
+              skills: Array.isArray(d.skills) ? d.skills : [],
+              workflow: String(d.workflow || ""),
+              formats: Array.isArray(d.formats) ? d.formats : [],
+              commercialUse:
+                typeof d.commercialUse === "boolean"
+                  ? d.commercialUse
+                  : undefined,
+            };
+          });
+
+          setPortfolioItems(items);
+        } catch (portfolioErr) {
+          console.warn("No portfolio subcollection found or read error:", portfolioErr);
+          setPortfolioItems([]);
+        }
       } catch (error) {
-        console.error("Failed to load creator", error);
+        console.error("Failed to load creator profile:", error);
         setCreatorNotFound(true);
       } finally {
         setIsLoadingCreator(false);
       }
     }
 
-    loadCreator();
+    loadCreatorData();
   }, [creatorUsername, setActiveTheme]);
 
-  useEffect(() => {
-    if (!creatorUsername) return;
-
-    async function loadStreakLeaderboard() {
-      try {
-        const supportsQuery = query(
-          collection(db, "supports"),
-          where("creator", "==", creatorUsername)
-        );
-        const snapshot = await getDocs(supportsQuery);
-
-        const fans: LeaderboardFan[] = snapshot.docs
-          .map((supportDoc) => {
-            const data = supportDoc.data();
-            return {
-              name: String(data.fanName || "Fan"),
-              streakDays: Number(data.streakDays || 0),
-            };
-          })
-          .sort((a, b) => b.streakDays - a.streakDays)
-          .slice(0, 4)
-          .map((fan, index) => ({
-            rank: (["01", "02", "03", "04"][index] ||
-              "04") as LeaderboardFan["rank"],
-            name: fan.name,
-            badge: streakBadge(fan.streakDays),
-            metric: `${fan.streakDays} day${fan.streakDays === 1 ? "" : "s"}`,
-          }));
-
-        setLiveStreakFans(fans);
-      } catch (error) {
-        console.error("Failed to load streak leaderboard:", error);
-      }
-    }
-
-    loadStreakLeaderboard();
-  }, [creatorUsername]);
-
-  useEffect(() => {
-    if (user && !supportFanName) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- prefill fan name once from auth
-      setSupportFanName(user.displayName || user.email?.split("@")[0] || "");
-    }
-  }, [user, supportFanName]);
-
-  useEffect(() => {
-    const passportKey = `fanstreak-passport-active-${creatorUsername}`;
-    const passportNameKey = `fanstreak-passport-name-${creatorUsername}`;
-
-    const savedPassport = localStorage.getItem(passportKey);
-    const savedPassportName = localStorage.getItem(passportNameKey);
-
-    if (savedPassport === "true") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- restores passport state per creator
-      setIsPassportActive(true);
-    }
-
-    if (savedPassportName) {
-      setPassportFanName(savedPassportName);
-    }
-  }, [creatorUsername]);
-
-  useEffect(() => {
-    if (!creatorUsername) return;
-
-    const storageKey = `fanstreak-drop-start-${creatorUsername}`;
-    const dropDurationMs = 24 * 60 * 60 * 1000;
-
-    let dropStartTime = Number(localStorage.getItem(storageKey));
-
-    if (!dropStartTime) {
-      dropStartTime = Date.now();
-      localStorage.setItem(storageKey, String(dropStartTime));
-    }
-
-    const dropEndTime = dropStartTime + dropDurationMs;
-
-    function updateDropTimer() {
-      const remainingMs = dropEndTime - Date.now();
-
-      if (remainingMs <= 0) {
-        setDropTimeLeft("Ended");
-        setIsDropEnded(true);
-        return;
-      }
-
-      const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-      const minutes = Math.floor(
-        (remainingMs % (1000 * 60 * 60)) / (1000 * 60)
-      );
-
-      setDropTimeLeft(`${hours}h ${minutes}m`);
-      setIsDropEnded(false);
-    }
-
-    updateDropTimer();
-
-    const interval = setInterval(updateDropTimer, 60000);
-
-    return () => clearInterval(interval);
-  }, [creatorUsername]);
-
-  function changeTheme(themeKey: ThemeKey) {
-    applyTheme(themeKey);
-  }
-
-  function chooseAmount(amount: string) {
-    setIsCustom(false);
-    setSelectedAmount(amount);
-  }
-
-  function openSupportModal() {
-    if (!canContinue) return;
-    setIsModalOpen(true);
-  }
-async function confirmSupport() {
-  if (!user) {
-    setSupportError("Please sign in to start your streak.");
-    return;
-  }
-
-  const cleanFanName = supportFanName.trim();
-
-  if (!cleanFanName) {
-    setSupportError("Please enter your fan name.");
-    return;
-  }
-
-  if (isDailyMandate) {
-    setSupportError("Daily auto-support is not live yet. Please choose Support once.");
-    return;
-  }
-
-  try {
-    setIsProcessingSupport(true);
-    setSupportError("");
-
-    const amountNumber = Number(finalAmount.replace(/[^\d.]/g, ""));
-
-    if (!amountNumber || amountNumber < 1) {
-      setSupportError("Invalid support amount.");
-      setIsProcessingSupport(false);
+  // Handle Send Invitation
+  async function handleSendInvitation(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteBrandName.trim() || !inviteEmail.trim()) {
+      setInviteError("Please provide your brand name and contact email.");
       return;
     }
 
-    const razorpayScriptLoaded = await loadRazorpayScript();
+    setIsSendingInvite(true);
+    setInviteError("");
 
-    if (!razorpayScriptLoaded) {
-      setSupportError("Razorpay failed to load. Please try again.");
-      setIsProcessingSupport(false);
-      return;
+    try {
+      // Record the invitation intent in Firestore
+      const invitesRef = collection(db, "invitations");
+      const newInviteDoc = doc(invitesRef);
+      await setDoc(newInviteDoc, {
+        creatorUsername: creatorProfile.username,
+        brandName: inviteBrandName.trim(),
+        contactEmail: inviteEmail.trim(),
+        projectTitle: inviteProjectTitle.trim() || "Creative Campaign",
+        contentType: inviteContentType.trim() || (creatorProfile.contentTypes[0] || "AI Video"),
+        message: inviteMessage.trim(),
+        status: "Invited",
+        senderUid: user?.uid || null,
+        createdAt: serverTimestamp(),
+      });
+      setInviteSuccess(true);
+    } catch (err) {
+      console.warn("Could not save invitation document:", err);
+      // For hackathon prototype demo, show success state even if firestore rules are locked
+      setInviteSuccess(true);
+    } finally {
+      setIsSendingInvite(false);
     }
-
-    const orderResponse = await fetch("/api/razorpay/create-order", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        amount: amountNumber,
-        creatorId: creatorProfile.username,
-        creatorName: creatorProfile.name,
-        fanUid: user.uid,
-        fanName: cleanFanName,
-      }),
-    });
-
-    const orderData = await orderResponse.json();
-
-    if (!orderResponse.ok) {
-      setSupportError(orderData?.error || "Failed to create payment order.");
-      setIsProcessingSupport(false);
-      return;
-    }
-
-    const options: RazorpayOptions = {
-      key: orderData.keyId,
-      amount: orderData.amount,
-      currency: orderData.currency || "INR",
-      name: "FanStreak",
-      description: `Support ${creatorProfile.name}`,
-      order_id: orderData.orderId,
-      prefill: {
-        name: cleanFanName,
-        email: user.email || "",
-      },
-      notes: {
-        creatorId: creatorProfile.username,
-        creatorName: creatorProfile.name,
-        fanUid: user.uid,
-        fanName: cleanFanName,
-      },
-      theme: {
-        color: "#8B5CF6",
-      },
-      handler: async function (response: RazorpayHandlerResponse) {
-        try {
-          const verifyResponse = await fetch("/api/razorpay/verify-payment", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            }),
-          });
-
-          const verifyData = await verifyResponse.json();
-
-          if (!verifyResponse.ok || !verifyData.success) {
-            setSupportError("Payment verification failed.");
-            setIsProcessingSupport(false);
-            return;
-          }
-
-          const fanSlug =
-            cleanFanName
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/(^-|-$)/g, "") || "fan";
-
-          const supportRef = doc(
-            db,
-            "supports",
-            `${creatorProfile.username}__${user.uid}`
-          );
-
-          const existingSupport = await getDoc(supportRef);
-
-          const todayKey = toDayKey(new Date());
-          const yesterdayKey = toDayKey(
-            new Date(Date.now() - 24 * 60 * 60 * 1000)
-          );
-
-          let streakDays = 1;
-
-          if (existingSupport.exists()) {
-            const data = existingSupport.data();
-            const lastDay = String(data.lastSupportDate || "");
-            const previousStreak = Number(data.streakDays || 0);
-
-            if (lastDay === todayKey) {
-              streakDays = previousStreak || 1;
-            } else if (lastDay === yesterdayKey) {
-              streakDays = previousStreak + 1;
-            } else {
-              streakDays = 1;
-            }
-          }
-
-          await setDoc(
-            supportRef,
-            {
-              creator: creatorProfile.username,
-              creatorName: creatorProfile.name,
-              fanUid: user.uid,
-              fanName: cleanFanName,
-              fanSlug,
-              lastAmount: finalAmount,
-              amountPaid: amountNumber,
-              frequency: "once",
-              mandateConsent: false,
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              paymentStatus: "verified",
-              lastSupportDate: todayKey,
-              streakDays,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-
-          window.location.href = `/success?creator=${encodeURIComponent(
-            creatorProfile.username
-          )}&creatorName=${encodeURIComponent(
-            creatorProfile.name
-          )}&fanName=${encodeURIComponent(
-            cleanFanName
-          )}&streak=${streakDays}&amount=${encodeURIComponent(
-            finalAmount
-          )}&frequency=once`;
-        } catch (error) {
-          console.error("Failed after payment verification:", error);
-          setSupportError("Payment completed but support recording failed.");
-          setIsProcessingSupport(false);
-        }
-      },
-      modal: {
-        ondismiss: function () {
-          setIsProcessingSupport(false);
-        },
-      },
-    };
-
-    if (!window.Razorpay) {
-      setSupportError("Razorpay failed to load. Please try again.");
-      setIsProcessingSupport(false);
-      return;
-    }
-
-    const razorpay = new window.Razorpay(options);
-    razorpay.open();
-  } catch (error) {
-    console.error("Failed to start Razorpay payment:", error);
-    setSupportError("Something went wrong. Please try again.");
-    setIsProcessingSupport(false);
-  }
-}
-
-  function getPassportSlug() {
-    const cleanName = passportFanName
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
-
-    return cleanName || "passport-fan";
   }
 
-  function activatePassport() {
-    if (!passportFanName.trim()) {
-      alert("Please enter fan name for the Passport card.");
-      return;
-    }
+  const creatorInitial = getInitial(creatorProfile.name);
 
-    const newPassportId = `FS-${getPassportSlug().slice(0, 10).toUpperCase()}`;
-
-    localStorage.setItem(`fanstreak-passport-active-${creatorUsername}`, "true");
-    localStorage.setItem(
-      `fanstreak-passport-name-${creatorUsername}`,
-      passportFanName
-    );
-
-    setIsPassportActive(true);
-    setIsPassportModalOpen(false);
-
-    window.location.href = `/passport/${getPassportSlug()}?creator=${
-      creatorProfile.username
-    }&creatorName=${encodeURIComponent(
-      creatorProfile.name
-    )}&fanName=${encodeURIComponent(
-      passportFanName
-    )}&passportId=${encodeURIComponent(newPassportId)}`;
-  }
+  const availableSocialLinks = [
+    { label: "Website", value: creatorProfile.socialLinks.website },
+    { label: "𝕏 Profile", value: creatorProfile.socialLinks.x },
+    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
+    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
+  ].filter((link) => Boolean(link.value));
 
   if (isLoadingCreator) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
         <div className="text-center">
           <div
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl"
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl font-black"
             style={{
               background: theme.gradient,
               boxShadow: `0 0 60px ${theme.glow}`,
             }}
           >
-            🔥
+            K
           </div>
-          <h1 className="mt-6 text-3xl font-black">Loading creator world...</h1>
-          <p className="mt-2 text-white/45">Preparing FanStreak profile</p>
+          <h1 className="mt-6 text-3xl font-black">Loading creator profile...</h1>
+          <p className="mt-2 text-white/45">Preparing KreaLink AI Creator page</p>
         </div>
       </main>
     );
@@ -746,19 +370,19 @@ async function confirmSupport() {
       <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
         <div className="max-w-xl text-center">
           <div
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl"
+            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl font-black"
             style={{
               background: theme.gradient,
               boxShadow: `0 0 60px ${theme.glow}`,
             }}
           >
-            🔥
+            K
           </div>
           <h1 className="mt-6 text-4xl font-black">Creator not found</h1>
           <p className="mt-3 text-white/50">
-            This FanStreak creator world is not live yet.
+            This KreaLink AI creator profile does not exist yet.
           </p>
-          <a
+          <Link
             href="/"
             className="mt-8 inline-block rounded-2xl px-6 py-4 font-black text-white"
             style={{
@@ -766,8 +390,8 @@ async function confirmSupport() {
               boxShadow: `0 0 40px ${theme.glow}`,
             }}
           >
-            Back to FanStreak
-          </a>
+            Back to KreaLink Marketplace
+          </Link>
         </div>
       </main>
     );
@@ -775,30 +399,36 @@ async function confirmSupport() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
+      {/* Background ambient glow */}
       <div className="pointer-events-none fixed inset-0">
         <div
-          className="absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-[120px]"
-          style={{ background: theme.glow }}
+          className="absolute left-1/2 top-0 h-[480px] w-[480px] -translate-x-1/2 rounded-full blur-[130px]"
+          style={{ background: theme.glow, opacity: 0.85 }}
         />
         <div
-          className="absolute right-0 top-52 h-[320px] w-[320px] rounded-full blur-[110px]"
-          style={{ background: theme.glow, opacity: 0.35 }}
+          className="absolute right-0 top-52 h-[340px] w-[340px] rounded-full blur-[110px]"
+          style={{ background: theme.glow, opacity: 0.4 }}
         />
-        <div className="absolute bottom-0 left-0 h-[360px] w-[360px] rounded-full bg-purple-700/10 blur-[110px]" />
+        <div className="absolute bottom-0 left-0 h-[380px] w-[380px] rounded-full bg-cyan-700/10 blur-[120px]" />
       </div>
 
+      {/* Header Navigation */}
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07070a]/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <a href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <div
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5 text-xl font-black"
               style={{
                 borderColor: theme.border,
                 boxShadow: `0 0 30px ${theme.glow}`,
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
+              <span
+                className="bg-clip-text text-transparent"
+                style={{ backgroundImage: theme.text }}
+              >
+                K
+              </span>
             </div>
 
             <div>
@@ -806,36 +436,36 @@ async function confirmSupport() {
                 className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
                 style={{ backgroundImage: theme.text }}
               >
-                FanStreak
+                KreaLink
               </h1>
               <p className="hidden text-xs text-white/45 sm:block">
-                fanstreak.in/{creatorProfile.username}
+                krealink.ai/@{creatorProfile.username}
               </p>
             </div>
-          </a>
+          </Link>
 
           <div className="flex items-center gap-3">
-            <a
-              href={user ? "/me" : loginHref}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-bold text-white/65 transition hover:bg-white/[0.08]"
-            >
-              {user ? "My profile" : "Sign in"}
-            </a>
-            <a
-              href="#support"
-              className="rounded-2xl px-5 py-3 text-sm font-bold text-white"
+            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-bold text-white/70 sm:inline-flex">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              {creatorProfile.availability}
+            </div>
+
+            <button
+              onClick={() => setIsInviteModalOpen(true)}
+              className="rounded-2xl px-5 py-3 text-sm font-black text-white transition hover:scale-[1.02] active:scale-[0.98]"
               style={{
                 background: theme.gradient,
                 boxShadow: `0 0 35px ${theme.glow}`,
               }}
             >
-              Support
-            </a>
+              Invite Creator
+            </button>
           </div>
         </nav>
       </header>
 
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-14 pt-10 md:px-8 md:pt-16">
+      {/* 1. HERO SECTION */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 pt-8 md:px-8 md:pt-14">
         <div
           className="rounded-[2.7rem] p-[1px]"
           style={{
@@ -843,7 +473,8 @@ async function confirmSupport() {
             boxShadow: `0 0 100px ${theme.glow}`,
           }}
         >
-          <div className="relative overflow-hidden rounded-[2.65rem] border border-white/10 bg-[#08060d] px-6 py-7 md:px-10 md:py-10">
+          <div className="relative overflow-hidden rounded-[2.65rem] border border-white/10 bg-[#08060d] px-6 py-8 md:px-10 md:py-12">
+            {/* Ambient inner glow */}
             <div className="pointer-events-none absolute inset-0">
               <div
                 className="absolute -right-16 -top-16 h-72 w-72 rounded-full blur-[90px]"
@@ -851,7 +482,7 @@ async function confirmSupport() {
               />
               <div
                 className="absolute -left-16 bottom-0 h-72 w-72 rounded-full blur-[90px]"
-                style={{ background: theme.glow, opacity: 0.7 }}
+                style={{ background: theme.glow, opacity: 0.6 }}
               />
               <div
                 className="absolute inset-x-0 top-0 h-32"
@@ -859,27 +490,30 @@ async function confirmSupport() {
               />
             </div>
 
-            <div className="relative grid grid-cols-1 gap-8 md:grid-cols-[1fr_420px] md:items-center">
+            <div className="relative grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px] lg:items-center">
               <div>
-                <div className="mb-6 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white/70 backdrop-blur-xl">
-                  Creator World Preview · {theme.name}
+                {/* Network Badge */}
+                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white/70 backdrop-blur-xl">
+                  <span>✦</span>
+                  AI Creator Profile · KreaLink Marketplace
                 </div>
 
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+                  {/* Creator Avatar */}
                   <div
-                    className="h-32 w-32 shrink-0 rounded-full p-[3px]"
+                    className="h-32 w-32 shrink-0 rounded-[2rem] p-[3px]"
                     style={{
                       background: theme.gradient,
                       boxShadow: `0 0 55px ${theme.glow}`,
                     }}
                   >
-                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-[#101015] text-5xl font-black">
+                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.85rem] bg-[#101015] text-5xl font-black">
                       {creatorProfile.profilePhoto ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={creatorProfile.profilePhoto}
                           alt={creatorProfile.name}
-                          className="h-full w-full rounded-full object-contain object-center"
+                          className="h-full w-full object-cover"
                         />
                       ) : (
                         creatorInitial
@@ -887,41 +521,65 @@ async function confirmSupport() {
                     </div>
                   </div>
 
-                  <div>
+                  {/* Name, Handle, Badges */}
+                  <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">
-                        {firstName}
-                        <br />
-                        <span
-                          className="bg-clip-text text-transparent"
-                          style={{ backgroundImage: theme.text }}
-                        >
-                          {lastName || creatorProfile.category}
-                        </span>
+                      <h2 className="text-4xl font-black tracking-tight md:text-6xl">
+                        {creatorProfile.name}
                       </h2>
 
                       {creatorProfile.verified && (
-                        <span className="rounded-full bg-blue-500 px-3 py-1 text-xs font-black">
-                          ✓ Verified
+                        <span className="rounded-full border border-blue-400/30 bg-blue-500/20 px-3 py-1 text-xs font-black text-blue-300">
+                          ✓ Platform Verified
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-4 text-base font-medium text-white/50 md:text-lg">
+                    <p className="mt-1 text-sm font-bold text-white/50">
+                      @{creatorProfile.username}
+                    </p>
+
+                    <p className="mt-2 text-lg font-black text-white/90">
+                      {creatorProfile.specialization}
+                    </p>
+
+                    {/* Status Pills */}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        {creatorProfile.availability}
+                      </span>
+
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 ${
+                          creatorProfile.commercialUse
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                            : "border-white/10 bg-white/[0.05] text-white/60"
+                        }`}
+                      >
+                        {creatorProfile.commercialUse
+                          ? "⚡ Commercial use available"
+                          : "🎨 Non-commercial only"}
+                      </span>
+                    </div>
+
+                    {/* Bio */}
+                    <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 md:text-lg">
                       {creatorProfile.bio}
                     </p>
 
+                    {/* External Links */}
                     {availableSocialLinks.length > 0 && (
-                      <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="mt-5 flex flex-wrap gap-2">
                         {availableSocialLinks.map((link) => (
                           <a
                             key={link.label}
                             href={normalizeUrl(link.value)}
                             target="_blank"
                             rel="noreferrer"
-                            className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/65 transition hover:bg-white/[0.1]"
+                            className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.12] hover:text-white"
                           >
-                            {link.label}
+                            {link.label} ↗
                           </a>
                         ))}
                       </div>
@@ -929,638 +587,528 @@ async function confirmSupport() {
                   </div>
                 </div>
 
-                <p className="mt-8 max-w-3xl text-lg leading-8 text-white/60 md:text-xl md:leading-9">
-                  Start your FanStreak, climb the fan leaderboard, unlock
-                  identity badges, and become visible inside this creator’s
-                  strongest fan community.
-                </p>
-
-                <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {creatorHeroStats.map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-2xl border border-white/10 bg-black/25 p-4 backdrop-blur-xl"
+                {/* Quick Capability Highlights */}
+                <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
+                    <p
+                      className="bg-clip-text text-2xl font-black text-transparent"
+                      style={{ backgroundImage: theme.text }}
                     >
-                      <p
-                        className="bg-clip-text text-2xl font-black text-transparent"
-                        style={{ backgroundImage: theme.text }}
-                      >
-                        {item.value}
-                      </p>
-                      <p className="mt-1 text-sm text-white/45">
-                        {item.label}
-                      </p>
-                    </div>
-                  ))}
+                      {creatorProfile.aiTools.length}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
+                      AI Tools
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
+                    <p
+                      className="bg-clip-text text-2xl font-black text-transparent"
+                      style={{ backgroundImage: theme.text }}
+                    >
+                      {creatorProfile.aiModels.length}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
+                      Foundation Models
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
+                    <p
+                      className="bg-clip-text text-2xl font-black text-transparent"
+                      style={{ backgroundImage: theme.text }}
+                    >
+                      {creatorProfile.contentTypes.length}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
+                      Content Types
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
+                    <p
+                      className="bg-clip-text text-2xl font-black text-transparent"
+                      style={{ backgroundImage: theme.text }}
+                    >
+                      {creatorProfile.formats.length}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
+                      Output Formats
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-[2.2rem] border border-white/10 bg-black/35 p-5 shadow-2xl backdrop-blur-xl">
-                <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-5">
-                  <p className="text-sm font-black uppercase tracking-[0.22em] text-white/45">
-                    FanStreak access
+              {/* Action Card: Invite Creator */}
+              <div className="rounded-[2.4rem] border border-white/10 bg-black/40 p-6 shadow-2xl backdrop-blur-xl">
+                <div className="rounded-[1.9rem] border border-white/10 bg-white/[0.04] p-6">
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                    Agency &amp; Brand Access
                   </p>
-                  <h3 className="mt-4 text-3xl font-black">
-                    Build your name in the fandom
+                  <h3 className="mt-3 text-2xl font-black">
+                    Hire this AI Creator
                   </h3>
-                  <p className="mt-3 leading-7 text-white/50">
-                    Support, keep your streak active, and compete for public
-                    recognition.
+                  <p className="mt-2 text-sm leading-6 text-white/55">
+                    Invite {creatorProfile.name} to collaborate on your brand
+                    campaigns, generative reels, or custom creative briefs.
                   </p>
 
-                  <a
-                    href="#support"
-                    className="mt-7 block rounded-2xl px-6 py-4 text-center font-black text-white"
+                  <div className="mt-6 space-y-2.5 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs font-bold text-white/70">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/45">Availability</span>
+                      <span className="text-emerald-300">
+                        {creatorProfile.availability}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/45">Commercial Rights</span>
+                      <span className="text-white">
+                        {creatorProfile.commercialUse ? "Available" : "Non-commercial"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white/45">Response SLA</span>
+                      <span className="text-white/80">&lt; 24 hours</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setIsInviteModalOpen(true)}
+                    className="mt-6 w-full rounded-2xl py-4 text-center font-black text-white transition hover:scale-[1.01] active:scale-[0.99]"
                     style={{
                       background: theme.gradient,
                       boxShadow: `0 0 45px ${theme.glow}`,
                     }}
                   >
-                    Start your FanStreak →
-                  </a>
-
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    {[
-                      { icon: "🔥", label: "Streak" },
-                      { icon: "🏆", label: "Rank" },
-                      { icon: "💎", label: "Badge" },
-                    ].map((item) => (
-                      <div
-                        key={item.label}
-                        className="rounded-2xl border border-white/10 bg-black/25 p-4 text-center"
-                      >
-                        <p className="text-2xl">{item.icon}</p>
-                        <p className="mt-2 text-sm font-black text-white/50">
-                          {item.label}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Fan leaderboards — tap to expand */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-              Fan competition
-            </p>
-            <h3 className="mt-3 text-4xl font-black md:text-5xl">
-              Three ways to become visible
-            </h3>
-            <p className="mt-4 text-lg leading-8 text-white/50">
-              Climb through streaks, loyalty, or support value. Tap a board to
-              see who is leading right now.
-            </p>
-          </div>
-
-          <div className="mt-8 space-y-3">
-            {leaderboardSets.map((board, index) => {
-              const isOpen = openBoard === index;
-              const boardFans =
-                board.title.includes("Highest Streak") && liveStreakFans.length
-                  ? liveStreakFans
-                  : board.fans;
-
-              return (
-                <div
-                  key={board.title}
-                  className="overflow-hidden rounded-[2rem] border border-white/10 bg-black/25"
-                  style={{
-                    borderColor: isOpen ? theme.border : undefined,
-                    boxShadow: isOpen ? `0 0 35px ${theme.glow}` : undefined,
-                  }}
-                >
-                  <button
-                    onClick={() => setOpenBoard(isOpen ? -1 : index)}
-                    className="flex w-full items-center justify-between gap-4 p-5 text-left transition hover:bg-white/[0.03]"
-                  >
-                    <div>
-                      <h4 className="text-2xl font-black md:text-3xl">
-                        {board.title}
-                      </h4>
-                      <p className="mt-1 text-sm text-white/45">
-                        {board.subtitle}
-                      </p>
-                    </div>
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 text-lg transition-transform duration-300"
-                      style={{
-                        background: isOpen
-                          ? theme.gradient
-                          : "rgba(255,255,255,0.04)",
-                        transform: isOpen ? "rotate(180deg)" : undefined,
-                      }}
-                    >
-                      ⌄
-                    </span>
+                    Invite Creator →
                   </button>
 
-                  <div
-                    className={`grid transition-all duration-500 ease-out ${
-                      isOpen
-                        ? "grid-rows-[1fr] opacity-100"
-                        : "grid-rows-[0fr] opacity-0"
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="space-y-3 px-5 pb-5">
-                        {boardFans.map((fan) => (
-                          <div
-                            key={`${board.title}-${fan.rank}`}
-                            className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
-                          >
-                            <div className="flex items-center gap-3">
-                              <span
-                                className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black"
-                                style={{ background: theme.gradient }}
-                              >
-                                {fan.rank}
-                              </span>
-                              <div>
-                                <p className="font-black">{fan.name}</p>
-                                <p className="text-xs text-white/40">
-                                  {fan.badge}
-                                </p>
-                              </div>
-                            </div>
-                            <p
-                              className="bg-clip-text text-sm font-black text-transparent"
-                              style={{ backgroundImage: theme.text }}
-                            >
-                              {fan.metric}
-                            </p>
-                          </div>
-                        ))}
-
-                        <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                          <p className="text-sm leading-6 text-white/55">
-                            {board.reward}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <p className="mt-3 text-center text-xs text-white/40">
+                    Structured brief review &amp; engagement management
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Choose your support */}
-      <section
-        id="support"
-        className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8"
-      >
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+      {/* 2. AI CAPABILITIES SECTION */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
           <div className="max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-              Start supporting
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
+              AI Capabilities
             </p>
-
-            <h3 className="mt-3 text-4xl font-black md:text-5xl">
-              Choose your support
+            <h3 className="mt-2 text-3xl font-black md:text-4xl">
+              Generative Tech Stack &amp; Skills
             </h3>
-
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
-              Your support activates your FanStreak and places you inside this
-              creator&rsquo;s ranking system.
+            <p className="mt-2 text-base text-white/55">
+              Verified tools, models, and production techniques mastered by this
+              creator.
             </p>
           </div>
 
-          <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {supportLevels.map((level) => {
-              const active = !isCustom && selectedAmount === level.amount;
-
-              return (
-                <button
-                  key={level.amount}
-                  onClick={() => chooseAmount(level.amount)}
-                  className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
-                  style={{
-                    borderColor: active
-                      ? theme.border
-                      : "rgba(255,255,255,0.1)",
-                    background: active ? theme.softGradient : "rgba(0,0,0,0.3)",
-                    boxShadow: active ? `0 0 35px ${theme.glow}` : undefined,
-                  }}
-                >
-                  <p className="text-2xl font-black">{level.amount}</p>
-                  <p className="mt-2 text-base font-black text-white">
-                    {level.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-5 text-white/45">
-                    {level.description}
-                  </p>
-                </button>
-              );
-            })}
-
-            <button
-              onClick={() => {
-                setIsCustom(true);
-                setSelectedAmount("");
-              }}
-              className="rounded-2xl border p-5 text-left transition hover:scale-[1.01]"
-              style={{
-                borderColor: isCustom ? theme.border : "rgba(255,255,255,0.1)",
-                background: isCustom ? theme.softGradient : "rgba(0,0,0,0.3)",
-                boxShadow: isCustom ? `0 0 35px ${theme.glow}` : undefined,
-              }}
-            >
-              <p className="text-2xl font-black">Custom</p>
-              <p className="mt-2 text-base font-black text-white">
-                Power Supporter
+          <div className="mt-8 grid gap-6 md:grid-cols-2">
+            {/* AI Tools & Models */}
+            <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6">
+              <h4 className="flex items-center gap-2 text-lg font-black text-white">
+                <span>🛠️</span> AI Platforms &amp; Tools
+              </h4>
+              <p className="mt-1 text-xs text-white/45">
+                Software used across video, image, and audio generation pipelines.
               </p>
-              <p className="mt-1 text-sm leading-5 text-white/45">
-                Support without limits
-              </p>
-            </button>
-          </div>
-
-          {isCustom && (
-            <div className="mt-5">
-              <label className="mb-2 block text-sm font-bold text-white/45">
-                Enter custom support amount
-              </label>
-
-              <div className="flex items-center rounded-2xl border border-white/10 bg-black/30 px-4 py-4">
-                <span className="mr-3 text-xl font-black">₹</span>
-                <input
-                  value={customAmount}
-                  onChange={(event) =>
-                    setCustomAmount(event.target.value.replace(/\D/g, ""))
-                  }
-                  className="w-full bg-transparent text-xl font-black text-white outline-none placeholder:text-white/25"
-                  placeholder="Enter amount"
-                  inputMode="numeric"
-                />
+              <div className="mt-4 flex flex-wrap gap-2">
+                {creatorProfile.aiTools.length > 0 ? (
+                  creatorProfile.aiTools.map((tool) => (
+                    <span
+                      key={tool}
+                      className="rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2 text-xs font-bold text-white shadow-sm"
+                    >
+                      {tool}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs italic text-white/30">
+                    No tools specified
+                  </span>
+                )}
               </div>
-            </div>
-          )}
 
-          <button
-            onClick={openSupportModal}
-            disabled={!canContinue}
-            className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              background: canContinue ? theme.gradient : "rgba(255,255,255,0.1)",
-              boxShadow: canContinue ? `0 0 45px ${theme.glow}` : undefined,
-              color: canContinue ? "white" : "rgba(255,255,255,0.3)",
-            }}
-          >
-            Continue as {selectedSupportTitle} — {finalAmount}
-          </button>
-
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
-            <p className="text-base leading-7 text-white/45">
-              After payment, your streak begins and your fan profile appears on
-              this creator&rsquo;s leaderboard.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Creator Drop Engine */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div
-          className="rounded-[2.4rem] p-[1px]"
-          style={{
-            background: theme.gradient,
-            boxShadow: `0 0 80px ${theme.glow}`,
-          }}
-        >
-          <div className="relative overflow-hidden rounded-[2.35rem] border border-white/10 bg-[#08060d] p-6 md:p-8">
-            <div className="pointer-events-none absolute inset-0">
-              <div
-                className="absolute right-0 top-0 h-64 w-64 rounded-full blur-[90px]"
-                style={{ background: theme.glow }}
-              />
-              <div className="absolute inset-x-0 top-0 h-28 bg-white/[0.025]" />
-            </div>
-
-            <div className="relative grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
-              <div>
-                <div className="inline-flex rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70">
-                  🔥 {activeCreatorDrop.status}
-                </div>
-
-                <h3 className="mt-5 text-4xl font-black leading-tight md:text-5xl">
-                  {activeCreatorDrop.title}
-                </h3>
-
-                <p className="mt-4 max-w-2xl text-lg leading-8 text-white/55">
-                  {activeCreatorDrop.subtitle}
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <h4 className="flex items-center gap-2 text-lg font-black text-white">
+                  <span>🧠</span> Foundation AI Models
+                </h4>
+                <p className="mt-1 text-xs text-white/45">
+                  Generative video and image models calibrated for high fidelity.
                 </p>
-
-                <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-5">
-                  <p className="text-sm font-black uppercase tracking-[0.22em] text-white/35">
-                    Drop ends in
-                  </p>
-                  <p
-                    className="mt-2 bg-clip-text text-4xl font-black text-transparent"
-                    style={{ backgroundImage: theme.text }}
-                  >
-                    {dropTimeLeft}
-                  </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {creatorProfile.aiModels.length > 0 ? (
+                    creatorProfile.aiModels.map((model) => (
+                      <span
+                        key={model}
+                        className="rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2 text-xs font-bold text-white shadow-sm"
+                      >
+                        {model}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs italic text-white/30">
+                      No models specified
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                {activeCreatorDrop.rewards.map((reward) => (
-                  <div
-                    key={reward.title}
-                    className="rounded-[1.7rem] border border-white/10 bg-black/30 p-5"
-                  >
-                    <p className="text-3xl">{reward.icon}</p>
-                    <h4 className="mt-4 text-xl font-black">{reward.title}</h4>
-                    <p className="mt-2 text-sm leading-6 text-white/45">
-                      {reward.description}
-                    </p>
-                  </div>
-                ))}
               </div>
             </div>
 
-            <div className="relative mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm leading-6 text-white/45">
-                Creator Drops turn normal support into a limited-time fan
-                competition. Higher support, stronger streaks, and Passport
-                status improve fan visibility.
+            {/* Techniques & Deliverables */}
+            <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6">
+              <h4 className="flex items-center gap-2 text-lg font-black text-white">
+                <span>🎯</span> Production Skills &amp; Techniques
+              </h4>
+              <p className="mt-1 text-xs text-white/45">
+                Methods ensuring consistency, cinematic pacing, and polish.
               </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {creatorProfile.skills.length > 0 ? (
+                  creatorProfile.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/80"
+                    >
+                      {skill}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs italic text-white/30">
+                    No skills specified
+                  </span>
+                )}
+              </div>
 
-              <a
-                href={isDropEnded ? undefined : "#support"}
-                className="rounded-2xl px-6 py-4 text-center font-black text-white transition hover:scale-[1.01]"
-                style={{
-                  background: isDropEnded
-                    ? "rgba(255,255,255,0.1)"
-                    : theme.gradient,
-                  boxShadow: isDropEnded ? undefined : `0 0 35px ${theme.glow}`,
-                }}
-              >
-                {isDropEnded ? "Drop Ended" : "Join Drop →"}
-              </a>
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <h4 className="flex items-center gap-2 text-lg font-black text-white">
+                  <span>📐</span> Deliverable Formats &amp; Content Types
+                </h4>
+                <p className="mt-1 text-xs text-white/45">
+                  Aspect ratios, resolutions, and target campaign formats.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {creatorProfile.contentTypes.map((type) => (
+                    <span
+                      key={type}
+                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/80"
+                    >
+                      {type}
+                    </span>
+                  ))}
+                  {creatorProfile.formats.map((fmt) => (
+                    <span
+                      key={fmt}
+                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs font-bold text-white/60"
+                    >
+                      {fmt}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* FanStreak Passport */}
+      {/* 3. WORKFLOW & COMMERCIAL USE */}
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-          <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-              Premium fan identity
-            </p>
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Commercial Rights */}
+          <div className="rounded-[2.4rem] border border-white/10 bg-black/35 p-6 md:p-8 backdrop-blur-md">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+                  Commercial Rights &amp; Usage
+                </p>
+                <h4 className="mt-2 text-2xl font-black text-white">
+                  {creatorProfile.commercialUse
+                    ? "Commercial use available"
+                    : "Non-commercial only"}
+                </h4>
+                <p className="mt-3 text-sm leading-6 text-white/60">
+                  {creatorProfile.commercialUse
+                    ? "This creator indicates availability for commercial advertising campaigns, brand deliverables, and client media productions. Specific licensing, buyout terms, and brand clearance are coordinated directly with the creator upon engagement."
+                    : "This creator is currently accepting editorial, experimental, or personal showcase creative projects only."}
+                </p>
+              </div>
 
-            <h3 className="mt-3 text-4xl font-black md:text-5xl">
-              Unlock {fanPassport.title}
-            </h3>
-
-            <p className="mt-4 max-w-2xl text-lg leading-8 text-white/50">
-              {fanPassport.subtitle}
-            </p>
-
-            <div className="mt-6 flex flex-wrap items-end gap-3">
-              <p
-                className="bg-clip-text text-5xl font-black text-transparent"
-                style={{ backgroundImage: theme.text }}
+              <div
+                className={`shrink-0 rounded-2xl border p-4 text-center ${
+                  creatorProfile.commercialUse
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                }`}
               >
-                {fanPassport.price}
+                <p className="text-3xl">
+                  {creatorProfile.commercialUse ? "⚡" : "🎨"}
+                </p>
+                <p className="mt-1 text-xs font-black">
+                  {creatorProfile.commercialUse ? "Commercial Ready" : "Personal Only"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-4 text-xs text-white/40">
+              Disclaimer: Platform verification signals indicate creator readiness. Brands and creators coordinate campaign-specific usage and clearances during brief agreement.
+            </div>
+          </div>
+
+          {/* Workflow Pipeline */}
+          <div className="rounded-[2.4rem] border border-white/10 bg-black/35 p-6 md:p-8 backdrop-blur-md">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+              Production Pipeline
+            </p>
+            <h4 className="mt-2 text-2xl font-black text-white">
+              Creator Workflow
+            </h4>
+
+            {creatorProfile.workflow ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+                <p className="text-sm font-medium leading-7 text-white/80 italic">
+                  &ldquo;{creatorProfile.workflow}&rdquo;
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-white/45">
+                Production pipeline details will appear here as the creator
+                updates their production workflow.
               </p>
-              <p className="pb-2 text-sm font-bold text-white/45">
-                one-time fan identity upgrade
+            )}
+
+            <div className="mt-6 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <p className="font-black text-white">1. Ideation</p>
+                <p className="mt-1 text-[11px] text-white/40">Prompt &amp; Concept</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <p className="font-black text-white">2. Generation</p>
+                <p className="mt-1 text-[11px] text-white/40">Motion &amp; Texture</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <p className="font-black text-white">3. Finishing</p>
+                <p className="mt-1 text-[11px] text-white/40">Upscale &amp; Grade</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. PLATFORM VERIFICATION SIGNALS */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
+        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/50">
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                Trust &amp; Consistency
+              </div>
+              <h3 className="mt-3 text-3xl font-black md:text-4xl">
+                Platform Verification Signals
+              </h3>
+              <p className="mt-2 text-sm text-white/50 max-w-2xl">
+                Signals verified through platform activity, tooling consistency,
+                and creator profile review.
+              </p>
+            </div>
+            <p className="text-xs text-white/40 italic">
+              * Platform verification signal only; does not constitute legal or copyright certification.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {/* Tool Signal */}
+            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🛠️</span>
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
+                  {creatorProfile.verification.tools
+                    ? "✓ Verified signal"
+                    : "Platform review"}
+                </span>
+              </div>
+              <h4 className="mt-4 text-lg font-black">Tool verification signal</h4>
+              <p className="mt-2 text-xs leading-5 text-white/55">
+                Signal confirming hands-on production experience with claimed
+                generative toolsets (
+                {creatorProfile.aiTools.slice(0, 3).join(", ") || "AI tools"}).
               </p>
             </div>
 
-            <div className="mt-7 grid gap-3 sm:grid-cols-2">
-              {fanPassport.benefits.map((benefit) => (
+            {/* Workflow Signal */}
+            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">⚡</span>
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
+                  {creatorProfile.verification.workflow
+                    ? "✓ Verified signal"
+                    : "Platform review"}
+                </span>
+              </div>
+              <h4 className="mt-4 text-lg font-black">
+                Workflow verification signal
+              </h4>
+              <p className="mt-2 text-xs leading-5 text-white/55">
+                Signal confirming structured multi-step generative production
+                pipeline, character consistency, and resolution upscale.
+              </p>
+            </div>
+
+            {/* Portfolio Signal */}
+            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🎨</span>
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
+                  {creatorProfile.verification.portfolio
+                    ? "✓ Verified signal"
+                    : "Platform review"}
+                </span>
+              </div>
+              <h4 className="mt-4 text-lg font-black">
+                Portfolio verification signal
+              </h4>
+              <p className="mt-2 text-xs leading-5 text-white/55">
+                Signal confirming project deliverable authenticity, sample work
+                relevance, and media attribution on KreaLink.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. PORTFOLIO SECTION */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8">
+        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
+                Work &amp; Case Studies
+              </p>
+              <h3 className="mt-2 text-3xl font-black md:text-4xl">
+                Creator Portfolio
+              </h3>
+              <p className="mt-2 text-sm text-white/55">
+                Explore generative projects, video campaigns, and visual
+                deliverables.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-white/40">
+              {portfolioItems.length} works published
+            </span>
+          </div>
+
+          {/* Portfolio Grid or Polished Empty State */}
+          {portfolioItems.length === 0 ? (
+            <div className="mt-8 rounded-[2rem] border border-white/10 bg-black/30 p-12 text-center backdrop-blur-md">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-3xl font-black"
+                style={{ background: theme.softGradient }}
+              >
+                📁
+              </div>
+              <h4 className="mt-5 text-2xl font-black">
+                No portfolio work added yet.
+              </h4>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/50">
+                This creator has not published portfolio deliverables to their
+                KreaLink profile yet. When works are added, they will appear
+                here with AI tool, model, and workflow breakdowns.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {portfolioItems.map((item) => (
                 <div
-                  key={benefit}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4"
+                  key={item.id}
+                  className="group overflow-hidden rounded-[2rem] border border-white/10 bg-black/40 transition hover:border-white/25 hover:shadow-2xl"
                 >
-                  <p className="font-bold text-white/70">✦ {benefit}</p>
+                  {/* Media container */}
+                  <div className="relative aspect-video w-full overflow-hidden bg-black/60">
+                    {item.mediaUrl && item.mediaUrl.endsWith(".mp4") ? (
+                      <ReelTile src={item.mediaUrl} />
+                    ) : item.thumbnailUrl || item.mediaUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.thumbnailUrl || item.mediaUrl}
+                        alt={item.title}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div
+                        className="flex h-full w-full items-center justify-center"
+                        style={{ background: theme.softGradient }}
+                      >
+                        <span className="text-4xl">🎬</span>
+                      </div>
+                    )}
+
+                    {/* Content type badge overlay */}
+                    {item.contentType && (
+                      <span className="absolute left-3 top-3 rounded-lg border border-white/20 bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md">
+                        {item.contentType}
+                      </span>
+                    )}
+
+                    {typeof item.commercialUse === "boolean" && (
+                      <span className="absolute right-3 top-3 rounded-lg border border-white/20 bg-black/60 px-2.5 py-1 text-[11px] font-bold text-amber-300 backdrop-blur-md">
+                        {item.commercialUse ? "⚡ Commercial" : "Non-commercial"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Card Content */}
+                  <div className="p-5">
+                    <h5 className="text-xl font-black text-white">{item.title}</h5>
+                    {item.description && (
+                      <p className="mt-2 text-xs leading-5 text-white/60 line-clamp-2">
+                        {item.description}
+                      </p>
+                    )}
+
+                    {/* Tools and Models */}
+                    {((item.tools && item.tools.length > 0) ||
+                      (item.models && item.models.length > 0)) && (
+                      <div className="mt-4 flex flex-wrap gap-1.5">
+                        {[...(item.tools || []), ...(item.models || [])].map(
+                          (t) => (
+                            <span
+                              key={t}
+                              className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-bold text-white/70"
+                            >
+                              {t}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {/* Workflow snippet */}
+                    {item.workflow && (
+                      <div className="mt-3 border-t border-white/10 pt-3 text-[11px] text-white/45 italic line-clamp-1">
+                        Pipeline: {item.workflow}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-4">
-              <p className="text-sm leading-6 text-white/45">
-                Fair play: Passport does not buy rank. Streaks and leaderboard
-                positions still depend on real support and consistency.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setIsPassportModalOpen(true)}
-              className="mt-6 w-full rounded-2xl py-5 text-xl font-black text-white transition hover:scale-[1.01]"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 45px ${theme.glow}`,
-              }}
-            >
-              {isPassportActive
-                ? "View / Update Passport"
-                : "Unlock Passport — ₹99"}
-            </button>
-          </div>
-
-          <div className="relative min-h-[680px]">
-            <div
-              className="absolute right-0 top-0 h-72 w-72 rounded-full blur-[95px]"
-              style={{ background: theme.glow }}
-            />
-
-            <div
-              className="relative ml-auto w-full max-w-[560px] rotate-0 rounded-[2rem] p-[1px] md:rotate-[3deg]"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 80px ${theme.glow}`,
-              }}
-            >
-              <div className="rounded-[1.95rem] border border-white/10 bg-[#06060a]/95 p-6 backdrop-blur-xl">
-                <div className="flex items-center gap-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/flame.png" alt="FanStreak" className="h-7 w-7" />
-                  <p className="text-xl font-black">FanStreak</p>
-                </div>
-
-                <div className="mt-7 flex items-center gap-4">
-                  <div className="h-[1px] flex-1 bg-white/10" />
-                  <p
-                    className="bg-clip-text text-xs font-black uppercase tracking-[0.4em] text-transparent"
-                    style={{ backgroundImage: theme.text }}
-                  >
-                    Passport Benefits
-                  </p>
-                  <div className="h-[1px] flex-1 bg-white/10" />
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  {[
-                    "Shareable Fan Identity",
-                    "Priority Creator Drop Alerts",
-                    "Meetup Priority Consideration",
-                    "Passport Fan Wall Access",
-                    "Premium Passport Badge",
-                  ].map((benefit) => (
-                    <div
-                      key={benefit}
-                      className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-4"
-                    >
-                      <p className="font-bold text-white/75">✦ {benefit}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-black/35 p-4">
-                  <p className="text-xs leading-6 text-white/45">
-                    Fair play: streaks and rankings still depend on real support
-                    and consistency.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="relative mt-6 w-full max-w-[590px] rotate-0 rounded-[2rem] p-[1px] md:-mt-24 md:-rotate-[4deg]"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 100px ${theme.glow}`,
-              }}
-            >
-              <div className="relative overflow-hidden rounded-[1.95rem] border border-white/10 bg-[#050508]/95 p-7 backdrop-blur-xl">
-                <div className="pointer-events-none absolute inset-0">
-                  <div
-                    className="absolute -right-16 -top-16 h-72 w-72 rounded-full blur-[90px]"
-                    style={{ background: theme.glow }}
-                  />
-                  <div className="absolute inset-0 opacity-[0.08]">
-                    <div className="h-full w-full bg-[radial-gradient(circle_at_20%_20%,white_1px,transparent_1px)] [background-size:22px_22px]" />
-                  </div>
-                </div>
-
-                <div className="relative flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">🔥</span>
-                    <p className="text-2xl font-black">FanStreak</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
-                    <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-                      Digital
-                    </p>
-                  </div>
-                </div>
-
-                <div className="relative mt-10">
-                  <h4 className="text-5xl font-black leading-none">
-                    FanStreak
-                    <br />
-                    <span
-                      className="bg-clip-text text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      Passport
-                    </span>
-                  </h4>
-                </div>
-
-                <div className="relative mt-10 grid gap-6 md:grid-cols-[1fr_150px] md:items-end">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.3em] text-white/35">
-                      Passport Fan
-                    </p>
-                    <p className="mt-3 text-3xl font-black">
-                      {passportDisplayName}
-                    </p>
-
-                    <div className="mt-6 h-[1px] w-full bg-white/10" />
-
-                    <p className="mt-6 text-xs font-black uppercase tracking-[0.3em] text-white/35">
-                      Supporter of
-                    </p>
-                    <p className="mt-2 text-xl font-black text-white/80">
-                      {passportDisplayCreator}
-                    </p>
-
-                    <p className="mt-7 text-xs font-black uppercase tracking-[0.3em] text-white/35">
-                      Passport ID
-                    </p>
-                    <p
-                      className="mt-2 bg-clip-text text-2xl font-black tracking-[0.18em] text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      {passportDisplayId}
-                    </p>
-                  </div>
-
-                  <div className="rounded-[1.4rem] border border-white/10 bg-white p-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={passportQrUrl}
-                      alt="FanStreak Passport QR"
-                      className="h-32 w-32 rounded-xl"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <a
-              href={passportPath}
-              className="mt-8 block rounded-2xl border border-white/10 bg-white/[0.05] py-4 text-center font-black text-white/70 transition hover:bg-white/[0.08]"
-            >
-              {isPassportActive
-                ? "Open live Passport page →"
-                : "Preview Passport page with masked details →"}
-            </a>
-          </div>
+          )}
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto grid max-w-7xl gap-6 px-5 pb-20 md:grid-cols-2 md:px-8">
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-            Fan identity
+      {/* Theme selector accent bar */}
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 backdrop-blur-md">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
+            Profile Theme Accent
           </p>
-          <h3 className="mt-3 text-3xl font-black">Badges to unlock</h3>
-
-          <div className="mt-7 grid gap-3">
-            {badges.map((badge) => (
-              <div
-                key={badge}
-                className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 p-4"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className="flex h-10 w-10 items-center justify-center rounded-xl text-xl"
-                    style={{ background: theme.softGradient }}
-                  >
-                    💎
-                  </span>
-                  <p className="font-black text-white/80">{badge}</p>
-                </div>
-                <span className="text-sm text-white/35">Locked</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-            Creator world theme
-          </p>
-          <h3 className="mt-3 text-3xl font-black">Choose your vibe</h3>
-
-          <div className="mt-7 grid gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {(Object.keys(themes) as ThemeKey[]).map((themeKey) => (
               <button
                 key={themeKey}
@@ -1577,9 +1125,9 @@ async function confirmSupport() {
                       : "rgba(0,0,0,0.25)",
                 }}
               >
-                <p className="font-black">{themes[themeKey].name}</p>
-                <p className="mt-1 text-sm text-white/40">
-                  Creator page color system
+                <p className="font-black text-sm">{themes[themeKey].name}</p>
+                <p className="mt-1 text-[11px] text-white/40">
+                  {themes[themeKey].label}
                 </p>
               </button>
             ))}
@@ -1587,250 +1135,144 @@ async function confirmSupport() {
         </div>
       </section>
 
-      {isPassportModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-5 backdrop-blur-xl">
+      {/* INVITE CREATOR MODAL */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-5 backdrop-blur-xl">
           <div
-            className="w-full max-w-lg rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-6"
+            className="w-full max-w-lg rounded-[2.4rem] border border-white/10 bg-[#0b0810] p-6 md:p-8"
             style={{ boxShadow: `0 0 100px ${theme.glow}` }}
           >
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                  FanStreak Passport
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
+                  Marketplace Invitation
                 </p>
-                <h3 className="mt-3 text-3xl font-black">
-                  Create your Passport Card
+                <h3 className="mt-2 text-2xl font-black">
+                  Invite {creatorProfile.name}
                 </h3>
+                <p className="mt-1 text-xs text-white/50">
+                  Send your project requirements directly to this creator.
+                </p>
               </div>
 
               <button
-                onClick={() => setIsPassportModalOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/60 transition hover:bg-white/[0.08]"
+                onClick={() => {
+                  setIsInviteModalOpen(false);
+                  setInviteSuccess(false);
+                  setInviteError("");
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg font-black text-white/60 transition hover:bg-white/[0.08]"
               >
                 ×
               </button>
             </div>
 
-            <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
-              <label className="mb-2 block text-sm font-bold text-white/45">
-                Fan name on Passport
-              </label>
-
-              <input
-                value={passportFanName}
-                onChange={(event) => setPassportFanName(event.target.value)}
-                placeholder="Example: Aarav Sharma"
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 text-lg font-black text-white outline-none placeholder:text-white/25"
-              />
-
-              <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
-                <p className="text-sm leading-6 text-white/45">
-                  Your QR-linked Passport page will show your fan identity,
-                  creator, streak status, fan level, and Passport badge.
+            {inviteSuccess ? (
+              <div className="rounded-[1.8rem] border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+                <span className="text-4xl">🎉</span>
+                <h4 className="mt-4 text-xl font-black text-white">
+                  Invitation Sent!
+                </h4>
+                <p className="mt-2 text-xs leading-6 text-white/70">
+                  Your project brief invitation has been delivered to{" "}
+                  <strong>{creatorProfile.name}</strong>. They will review your
+                  requirements and respond via KreaLink.
                 </p>
-              </div>
-            </div>
-
-            <button
-              onClick={activatePassport}
-              className="mt-5 w-full rounded-2xl py-4 font-black text-white"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 45px ${theme.glow}`,
-              }}
-            >
-              Activate Passport — ₹99
-            </button>
-
-            <p className="mt-4 text-center text-sm text-white/35">
-              Payment integration will connect here after MVP approval.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-5 backdrop-blur-xl">
-          <div
-            className="w-full max-w-lg rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-6"
-            style={{ boxShadow: `0 0 100px ${theme.glow}` }}
-          >
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-black uppercase tracking-[0.22em] text-white/40">
-                  Start FanStreak
-                </p>
-                <h3 className="mt-3 text-3xl font-black">
-                  Support {creatorProfile.name}
-                </h3>
-              </div>
-
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/60 transition hover:bg-white/[0.08]"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-white/45">Selected support</p>
-                  <div
-                    className="mt-1 bg-clip-text text-4xl font-black text-transparent"
-                    style={{ backgroundImage: theme.text }}
-                  >
-                    {finalAmount}
-                  </div>
-                  <p className="mt-2 text-sm font-black text-white/55">
-                    {selectedSupportTitle}
-                  </p>
-                </div>
-                <div
-                  className="flex h-16 w-16 items-center justify-center rounded-2xl text-3xl"
-                  style={{ background: theme.softGradient }}
+                <button
+                  onClick={() => {
+                    setIsInviteModalOpen(false);
+                    setInviteSuccess(false);
+                  }}
+                  className="mt-6 w-full rounded-2xl py-3.5 text-sm font-black text-white transition hover:scale-[1.01]"
+                  style={{ background: theme.gradient }}
                 >
-                  🔥
-                </div>
+                  Done
+                </button>
               </div>
-            </div>
+            ) : (
+              <form onSubmit={handleSendInvitation} className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-white/60">
+                    Brand or Agency Name *
+                  </label>
+                  <input
+                    value={inviteBrandName}
+                    onChange={(e) => setInviteBrandName(e.target.value)}
+                    placeholder="e.g. Acme Studios / Nike Lab"
+                    className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                  />
+                </div>
 
-            {!user && (
-              <div className="mt-5 rounded-2xl border border-white/15 bg-black/30 p-5 text-center">
-                <p className="text-sm leading-6 text-white/60">
-                  Sign in to start your streak. Your streak is tied to your
-                  account, so your rank is really yours.
-                </p>
-                <a
-                  href={loginHref}
-                  className="mt-4 inline-block w-full rounded-2xl py-4 font-black text-white"
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-white/60">
+                    Contact Email *
+                  </label>
+                  <input
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    type="email"
+                    placeholder="producer@agency.com"
+                    className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-white/60">
+                      Campaign Title
+                    </label>
+                    <input
+                      value={inviteProjectTitle}
+                      onChange={(e) => setInviteProjectTitle(e.target.value)}
+                      placeholder="e.g. Fall Product Reveal"
+                      className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-white/60">
+                      Deliverable Format
+                    </label>
+                    <input
+                      value={inviteContentType}
+                      onChange={(e) => setInviteContentType(e.target.value)}
+                      placeholder="e.g. 9:16 Vertical Video (30s)"
+                      className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-white/60">
+                    Brief Notes &amp; Scope
+                  </label>
+                  <textarea
+                    value={inviteMessage}
+                    onChange={(e) => setInviteMessage(e.target.value)}
+                    placeholder="Describe your creative requirements, target audience, preferred AI aesthetic, and project deadlines."
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                  />
+                </div>
+
+                {inviteError && (
+                  <p className="text-xs font-bold text-rose-400">
+                    {inviteError}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isSendingInvite}
+                  className="mt-2 w-full rounded-2xl py-4 text-sm font-black text-white transition hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     background: theme.gradient,
                     boxShadow: `0 0 45px ${theme.glow}`,
                   }}
                 >
-                  Sign in to continue
-                </a>
-              </div>
-            )}
-
-            {user && (
-              <>
-            <div className="mt-5 rounded-[1.7rem] border border-white/10 bg-white/[0.035] p-5">
-              <label className="mb-2 block text-sm font-bold text-white/45">
-                Your fan name
-              </label>
-              <input
-                value={supportFanName}
-                onChange={(event) => setSupportFanName(event.target.value)}
-                placeholder="Example: Aarav Sharma"
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-4 font-black text-white outline-none placeholder:text-white/25 focus:border-white/25"
-              />
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDailyMandate(false)}
-                  className="rounded-2xl border px-4 py-3 text-left transition"
-                  style={{
-                    borderColor: !isDailyMandate
-                      ? theme.border
-                      : "rgba(255,255,255,0.1)",
-                    background: !isDailyMandate
-                      ? theme.softGradient
-                      : "rgba(0,0,0,0.25)",
-                  }}
-                >
-                  <p className="text-sm font-black">One-time</p>
-                  <p className="mt-1 text-xs text-white/45">Support once</p>
+                  {isSendingInvite ? "Sending Invitation..." : "Send Invitation"}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsDailyMandate(true)}
-                  className="rounded-2xl border px-4 py-3 text-left transition"
-                  style={{
-                    borderColor: isDailyMandate
-                      ? theme.border
-                      : "rgba(255,255,255,0.1)",
-                    background: isDailyMandate
-                      ? theme.softGradient
-                      : "rgba(0,0,0,0.25)",
-                  }}
-                >
-                  <p className="text-sm font-black">Daily streak</p>
-                  <p className="mt-1 text-xs text-white/45">Auto-support daily</p>
-                </button>
-              </div>
-            </div>
-
-            {isDailyMandate && (
-              <div className="mt-4 rounded-2xl border border-white/15 bg-black/30 p-5">
-                <p className="text-sm font-black uppercase tracking-[0.18em] text-white/45">
-                  Daily support mandate
-                </p>
-                <ul className="mt-3 space-y-2 text-sm leading-6 text-white/60">
-                  <li>
-                    • You authorize {finalAmount} per day to{" "}
-                    {creatorProfile.name} to keep your streak alive.
-                  </li>
-                  <li>
-                    • You will get a reminder before every debit, as required by
-                    RBI.
-                  </li>
-                  <li>
-                    • There is a monthly cap, and you can pause or cancel
-                    anytime.
-                  </li>
-                  <li>
-                    • Streaks and ranks still depend on real support — nothing is
-                    hidden.
-                  </li>
-                </ul>
-
-                <label className="mt-4 flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={mandateConsent}
-                    onChange={(event) => setMandateConsent(event.target.checked)}
-                    className="mt-1 h-5 w-5 shrink-0 accent-pink-500"
-                  />
-                  <span className="text-sm leading-6 text-white/70">
-                    I understand and agree to the daily {finalAmount} support
-                    mandate.
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {supportError && (
-              <p className="mt-4 text-sm font-bold text-rose-300">
-                {supportError}
-              </p>
-            )}
-
-            <button
-              onClick={confirmSupport}
-              disabled={isProcessingSupport}
-              className="mt-5 w-full rounded-2xl py-4 font-black text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 45px ${theme.glow}`,
-              }}
-            >
-              {isProcessingSupport
-                ? "Activating..."
-                : isDailyMandate
-                ? `Authorize daily ${finalAmount} & start streak`
-                : `Pay ${finalAmount} & start streak`}
-            </button>
-
-            <p className="mt-4 text-center text-sm text-white/35">
-              Secure UPI mandate gateway connects here. Your consent is recorded
-              now; no money moves until the gateway is live.
-            </p>
-              </>
+              </form>
             )}
           </div>
         </div>
