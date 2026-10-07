@@ -34,8 +34,8 @@ export type CreatorProfile = {
   };
   status?: string;
   theme?: ThemeKey;
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 export type PortfolioItem = {
@@ -51,8 +51,8 @@ export type PortfolioItem = {
   workflow?: string;
   formats?: string[];
   commercialUse?: boolean;
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 export type BrandProfile = {
@@ -63,12 +63,40 @@ export type BrandProfile = {
   description: string;
   logo?: string;
   contactEmail?: string;
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
+
+// ==========================================
+// Canonical Status Enums & Lifecycle Constants
+// ==========================================
+
+export const BRIEF_STATUS = {
+  DRAFT: "Draft",
+  PUBLISHED: "Published",
+  MATCHED: "Matched",
+  IN_PROGRESS: "In Progress",
+  COMPLETED: "Completed",
+} as const;
+export type BriefStatus = (typeof BRIEF_STATUS)[keyof typeof BRIEF_STATUS];
+
+export const INVITATION_STATUS = {
+  INVITED: "Invited",
+  ACCEPTED: "Accepted",
+  DECLINED: "Declined",
+} as const;
+export type InvitationStatus = (typeof INVITATION_STATUS)[keyof typeof INVITATION_STATUS];
+
+export const ENGAGEMENT_STATUS = {
+  ACCEPTED: "Accepted",
+  IN_PROGRESS: "In Progress",
+  DELIVERED: "Delivered",
+} as const;
+export type EngagementStatus = (typeof ENGAGEMENT_STATUS)[keyof typeof ENGAGEMENT_STATUS];
 
 export type CreativeBrief = {
   id?: string;
+  ownerUid?: string; // Brand owner Firebase Auth UID
   brandId: string;
   brandName?: string;
   campaignName: string;
@@ -81,13 +109,16 @@ export type CreativeBrief = {
   deliverables: string[];
   commercialUse: boolean;
   notes?: string;
-  status: "Draft" | "Published" | "Matched" | "In Progress" | "Completed";
-  createdAt?: any;
-  updatedAt?: any;
+  status: BriefStatus;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 export type Invitation = {
   id?: string;
+  ownerUid?: string; // Authoritative sender UID
+  brandOwnerUid?: string;
+  creatorOwnerUid?: string;
   brandId: string;
   brandName: string;
   creatorUsername: string;
@@ -96,9 +127,9 @@ export type Invitation = {
   contentType?: string;
   message: string;
   contactEmail: string;
-  status: "Invited" | "Accepted" | "Declined";
-  createdAt?: any;
-  updatedAt?: any;
+  status: InvitationStatus;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 export type Engagement = {
@@ -107,13 +138,15 @@ export type Engagement = {
   briefId?: string;
   brandId: string;
   brandName: string;
+  brandOwnerUid?: string;
   creatorUsername: string;
+  creatorOwnerUid?: string;
   campaignTitle: string;
   deliverables?: string[];
-  status: "Accepted" | "In Progress" | "Delivered";
+  status: EngagementStatus;
   notes?: string;
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 };
 
 // ==========================================

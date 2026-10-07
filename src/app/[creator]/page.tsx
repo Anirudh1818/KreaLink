@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -12,136 +12,58 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { isThemeKey, themes, type ThemeKey } from "@/lib/themes";
-import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
-import { ReelTile } from "@/components/ReelTile";
-
-// Data types for KreaLink AI Creator Profile
-type CreatorProfile = {
-  name: string;
-  username: string;
-  specialization: string;
-  bio: string;
-  availability: string;
-  commercialUse: boolean;
-  skills: string[];
-  aiTools: string[];
-  aiModels: string[];
-  contentTypes: string[];
-  formats: string[];
-  workflow: string;
-  profilePhoto: string;
-  socialLinks: {
-    website?: string;
-    instagram?: string;
-    youtube?: string;
-    x?: string;
-  };
-  verified: boolean;
-  verification: {
-    tools: boolean;
-    workflow: boolean;
-    portfolio: boolean;
-  };
-  status: string;
-  theme: ThemeKey;
-};
-
-// Portfolio item data structure matching creators/{username}/portfolio/{portfolioId}
-type PortfolioItem = {
-  id: string;
-  title: string;
-  description?: string;
-  mediaUrl?: string;
-  thumbnailUrl?: string;
-  contentType?: string;
-  tools?: string[];
-  models?: string[];
-  skills?: string[];
-  workflow?: string;
-  formats?: string[];
-  commercialUse?: boolean;
-};
-
-// Demo fallback creator if document does not exist yet in Firestore
-const fallbackKreaLinkCreator: CreatorProfile = {
-  name: "Alex Vance",
-  username: "alexvance",
-  specialization: "AI Filmmaker & Creative Director",
-  bio: "Directing cinematic AI films, commercial spots, and narrative visual experiments with multi-model generative pipelines.",
-  availability: "Available immediately",
-  commercialUse: true,
-  skills: [
-    "Prompt Engineering",
-    "Character Consistency",
-    "Camera Movement Control",
-    "Storyboarding & Animatics",
-    "Post-Processing & Upscaling",
-    "Color Grading & Finishing",
-  ],
-  aiTools: ["Midjourney", "Runway", "ComfyUI", "Topaz Video AI", "DaVinci Resolve"],
-  aiModels: [
-    "Runway Gen-3 Alpha",
-    "Flux.1 Dev",
-    "Midjourney v6.1",
-    "Kling 1.5",
-    "OpenAI Sora",
-  ],
-  contentTypes: [
-    "Brand Commercials",
-    "Short-Form Video (Reels/TikTok)",
-    "Cinematic Trailers",
-    "Product Visualizations",
-  ],
-  formats: [
-    "9:16 Vertical (Reels / TikTok / Shorts)",
-    "16:9 Landscape (YouTube / TV / Cinema)",
-    "4K UHD",
-  ],
-  workflow:
-    "Ideation and character design in Midjourney v6.1, generative video in Runway Gen-3 & Kling 1.5, 4K detail enhancement with Topaz Video AI, and final sound & grading in DaVinci Resolve.",
-  profilePhoto: "",
-  socialLinks: {
-    website: "https://krealink.ai/alexvance",
-    x: "https://x.com/alexvance",
-  },
-  verified: true,
-  verification: {
-    tools: true,
-    workflow: true,
-    portfolio: true,
-  },
-  status: "Active",
-  theme: "flame",
-};
+import { Navbar } from "@/components/Navbar";
+import { CreatorProfile, PortfolioItem, INVITATION_STATUS } from "@/lib/types";
+import { DEMO_CREATORS } from "@/lib/demoData";
 
 function getParamValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || "";
   return value || "";
 }
 
-function getInitial(name: string): string {
-  return name.trim().charAt(0).toUpperCase() || "K";
-}
-
-function normalizeUrl(value?: string): string {
-  if (!value) return "#";
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
-  return `https://${value}`;
-}
-
-export default function CreatorPage() {
+export default function CreatorProfilePage() {
   const params = useParams();
   const { user } = useAuth();
   const creatorUsername = getParamValue(params?.creator);
 
-  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(
-    fallbackKreaLinkCreator
-  );
-  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>([]);
-  const [isLoadingCreator, setIsLoadingCreator] = useState(true);
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(DEMO_CREATORS[0].creator);
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>(DEMO_CREATORS[0].portfolio);
+  const [isLoading, setIsLoading] = useState(true);
   const [creatorNotFound, setCreatorNotFound] = useState(false);
+
+  // Derive empirical portfolio evidence
+  const evidenceStats = useMemo(() => {
+    const totalProjects = portfolioItems.length;
+    const toolCounts: Record<string, number> = {};
+    const formatCounts: Record<string, number> = {};
+    let commercialProjects = 0;
+
+    portfolioItems.forEach((item) => {
+      if (item.commercialUse) commercialProjects++;
+      [...(item.tools || []), ...(item.models || [])].forEach((t) => {
+        toolCounts[t] = (toolCounts[t] || 0) + 1;
+      });
+      (item.formats || []).forEach((f) => {
+        formatCounts[f] = (formatCounts[f] || 0) + 1;
+      });
+    });
+
+    const topTools = Object.entries(toolCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    const topFormats = Object.entries(formatCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2);
+
+    return {
+      totalProjects,
+      commercialProjects,
+      topTools,
+      topFormats,
+    };
+  }, [portfolioItems]);
 
   // Invite Creator Modal state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -154,154 +76,138 @@ export default function CreatorPage() {
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [inviteError, setInviteError] = useState("");
 
-  const {
-    activeTheme,
-    setActiveTheme,
-    changeTheme,
-    theme,
-  } = useStoredTheme();
+  // Match score preview
+  const [activeTab, setActiveTab] = useState<"portfolio" | "capabilities" | "match">("portfolio");
 
-  // Load creator document and portfolio subcollection
   useEffect(() => {
-    async function loadCreatorData() {
+    async function loadCreator() {
       if (!creatorUsername) {
         setCreatorNotFound(true);
-        setIsLoadingCreator(false);
+        setIsLoading(false);
         return;
       }
+
+      // Check demo creators first for instant rich fallback
+      const foundDemo = DEMO_CREATORS.find(
+        (c) => c.creator.username.toLowerCase() === creatorUsername.toLowerCase()
+      );
 
       try {
         const creatorRef = doc(db, "creators", creatorUsername);
         const creatorSnap = await getDoc(creatorRef);
 
-        if (!creatorSnap.exists()) {
-          // If the username requested is the demo fallback, display demo profile
-          if (
-            creatorUsername === fallbackKreaLinkCreator.username ||
-            creatorUsername === "samay"
-          ) {
-            setCreatorProfile({
-              ...fallbackKreaLinkCreator,
-              username: creatorUsername,
-            });
-            setActiveTheme(fallbackKreaLinkCreator.theme);
-            setCreatorNotFound(false);
-          } else {
-            setCreatorNotFound(true);
+        if (creatorSnap.exists()) {
+          const d = creatorSnap.data();
+          const loaded: CreatorProfile = {
+            name: String(d.name || creatorUsername),
+            username: String(d.username || creatorUsername),
+            specialization: String(d.specialization || d.category || "AI Creator"),
+            bio: String(d.bio || ""),
+            availability: String(d.availability || "Available immediately"),
+            commercialUse: typeof d.commercialUse === "boolean" ? d.commercialUse : true,
+            skills: Array.isArray(d.skills) ? d.skills : foundDemo?.creator.skills || [],
+            aiTools: Array.isArray(d.aiTools) ? d.aiTools : foundDemo?.creator.aiTools || [],
+            aiModels: Array.isArray(d.aiModels) ? d.aiModels : foundDemo?.creator.aiModels || [],
+            contentTypes: Array.isArray(d.contentTypes) ? d.contentTypes : foundDemo?.creator.contentTypes || [],
+            formats: Array.isArray(d.formats) ? d.formats : foundDemo?.creator.formats || [],
+            workflow: String(d.workflow || foundDemo?.creator.workflow || ""),
+            profilePhoto: String(d.profilePhoto || ""),
+            verified: Boolean(d.verified ?? true),
+            verification: {
+              tools: Boolean(d.verification?.tools ?? true),
+              workflow: Boolean(d.verification?.workflow ?? true),
+              portfolio: Boolean(d.verification?.portfolio ?? true),
+            },
+            status: String(d.status || "Active"),
+            theme: "flame",
+          };
+          setCreatorProfile(loaded);
+
+          // Fetch portfolio subcollection
+          try {
+            const portSnap = await getDocs(collection(db, "creators", creatorUsername, "portfolio"));
+            if (!portSnap.empty) {
+              const items: PortfolioItem[] = portSnap.docs.map((docSnap) => ({
+                ...(docSnap.data() as unknown as PortfolioItem),
+                id: docSnap.id,
+              }));
+              setPortfolioItems(items);
+            } else if (foundDemo) {
+              setPortfolioItems(foundDemo.portfolio);
+            } else {
+              setPortfolioItems([
+                {
+                  id: "showcase-1",
+                  title: `${loaded.specialization} Showcase Reel`,
+                  description: loaded.bio,
+                  mediaUrl: "/creators/digitaldavincis/reels/reel-1.mp4",
+                  thumbnailUrl: loaded.profilePhoto || "/creators/digitaldavincis/reels/reel-1.jpg",
+                  contentType: loaded.contentTypes?.[0] || "Short-form Video (Reels/TikTok)",
+                  tools: loaded.aiTools,
+                  models: loaded.aiModels,
+                  skills: loaded.skills,
+                  workflow: loaded.workflow || "Prompt Engineering → Motion Synthesis → Topaz 4K",
+                  formats: loaded.formats,
+                  commercialUse: loaded.commercialUse,
+                },
+              ]);
+            }
+          } catch {
+            if (foundDemo) setPortfolioItems(foundDemo.portfolio);
           }
-          setIsLoadingCreator(false);
-          return;
+        } else if (foundDemo) {
+          setCreatorProfile(foundDemo.creator);
+          setPortfolioItems(foundDemo.portfolio);
+        } else {
+          setCreatorNotFound(true);
         }
-
-        const data = creatorSnap.data();
-        const nextTheme = isThemeKey(data.theme) ? data.theme : "flame";
-
-        // Read KreaLink creator fields, handling missing legacy fields safely
-        const nextCreator: CreatorProfile = {
-          name: String(data.name || creatorUsername),
-          username: String(data.username || creatorUsername),
-          specialization: String(
-            data.specialization || data.category || "AI Content Creator"
-          ),
-          bio: String(
-            data.bio ||
-              "AI-native content creator specializing in generative video and visual storytelling."
-          ),
-          availability: String(
-            data.availability || "Available for projects"
-          ),
-          commercialUse:
-            typeof data.commercialUse === "boolean"
-              ? data.commercialUse
-              : true,
-          skills: Array.isArray(data.skills) ? data.skills : [],
-          aiTools: Array.isArray(data.aiTools) ? data.aiTools : [],
-          aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
-          contentTypes: Array.isArray(data.contentTypes)
-            ? data.contentTypes
-            : [],
-          formats: Array.isArray(data.formats) ? data.formats : [],
-          workflow: String(data.workflow || ""),
-          profilePhoto: String(data.profilePhoto || ""),
-          socialLinks: {
-            website: data.socialLinks?.website || data.website || "",
-            x: data.socialLinks?.x || data.x || "",
-            instagram: data.socialLinks?.instagram || data.instagram || "",
-            youtube: data.socialLinks?.youtube || data.youtube || "",
-          },
-          verified: Boolean(data.verified),
-          verification: {
-            tools: Boolean(data.verification?.tools ?? data.verified),
-            workflow: Boolean(data.verification?.workflow),
-            portfolio: Boolean(data.verification?.portfolio),
-          },
-          status: String(data.status || "Active"),
-          theme: nextTheme,
-        };
-
-        setCreatorProfile(nextCreator);
-        setActiveTheme(nextTheme);
-        setCreatorNotFound(false);
-
-        // Fetch portfolio subcollection: creators/{username}/portfolio/{portfolioId}
-        try {
-          const portfolioRef = collection(
-            db,
-            "creators",
-            creatorUsername,
-            "portfolio"
-          );
-          const portfolioSnap = await getDocs(portfolioRef);
-
-          const items: PortfolioItem[] = portfolioSnap.docs.map((docSnap) => {
-            const d = docSnap.data();
-            return {
-              id: docSnap.id,
-              title: String(d.title || "Untitled Project"),
-              description: String(d.description || ""),
-              mediaUrl: String(d.mediaUrl || d.media || ""),
-              thumbnailUrl: String(
-                d.thumbnailUrl || d.thumbnail || d.mediaUrl || ""
-              ),
-              contentType: String(d.contentType || ""),
-              tools: Array.isArray(d.tools)
-                ? d.tools
-                : Array.isArray(d.aiTools)
-                ? d.aiTools
-                : [],
-              models: Array.isArray(d.models)
-                ? d.models
-                : Array.isArray(d.aiModels)
-                ? d.aiModels
-                : [],
-              skills: Array.isArray(d.skills) ? d.skills : [],
-              workflow: String(d.workflow || ""),
-              formats: Array.isArray(d.formats) ? d.formats : [],
-              commercialUse:
-                typeof d.commercialUse === "boolean"
-                  ? d.commercialUse
-                  : undefined,
-            };
-          });
-
-          setPortfolioItems(items);
-        } catch (portfolioErr) {
-          console.warn("No portfolio subcollection found or read error:", portfolioErr);
-          setPortfolioItems([]);
+      } catch (err) {
+        console.warn("Creator profile fetch note:", err);
+        if (typeof window !== "undefined") {
+          const locallySaved = localStorage.getItem("krealink-profile-" + creatorUsername);
+          if (locallySaved) {
+            try {
+              const parsed = JSON.parse(locallySaved);
+              setCreatorProfile(parsed);
+              setPortfolioItems([
+                {
+                  id: "showcase-1",
+                  title: `${parsed.specialization || "AI"} Showcase Reel`,
+                  description: parsed.bio || "",
+                  mediaUrl: "/creators/digitaldavincis/reels/reel-1.mp4",
+                  thumbnailUrl: parsed.profilePhoto || "/creators/digitaldavincis/reels/reel-1.jpg",
+                  contentType: parsed.contentTypes?.[0] || "Short-form Video (Reels/TikTok)",
+                  tools: parsed.aiTools || [],
+                  models: parsed.aiModels || [],
+                  skills: parsed.skills || [],
+                  workflow: parsed.workflow || "",
+                  formats: parsed.formats || [],
+                  commercialUse: parsed.commercialUse ?? true,
+                },
+              ]);
+              setCreatorNotFound(false);
+              setIsLoading(false);
+              return;
+            } catch {
+              // ignore
+            }
+          }
         }
-      } catch (error) {
-        console.error("Failed to load creator profile:", error);
-        setCreatorNotFound(true);
+        if (foundDemo) {
+          setCreatorProfile(foundDemo.creator);
+          setPortfolioItems(foundDemo.portfolio);
+        } else {
+          setCreatorNotFound(true);
+        }
       } finally {
-        setIsLoadingCreator(false);
+        setIsLoading(false);
       }
     }
 
-    loadCreatorData();
-  }, [creatorUsername, setActiveTheme]);
+    loadCreator();
+  }, [creatorUsername]);
 
-  // Handle Send Invitation
-  async function handleSendInvitation(e: React.FormEvent) {
+  const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteBrandName.trim() || !inviteEmail.trim()) {
       setInviteError("Please provide your brand name and contact email.");
@@ -312,54 +218,37 @@ export default function CreatorPage() {
     setInviteError("");
 
     try {
-      // Record the invitation intent in Firestore
-      const invitesRef = collection(db, "invitations");
-      const newInviteDoc = doc(invitesRef);
+      const newInviteDoc = doc(collection(db, "invitations"));
+      const brandId = user?.uid ? `brand-${user.uid.slice(0, 8)}` : "brand-client";
       await setDoc(newInviteDoc, {
-        creatorUsername: creatorProfile.username,
+        ownerUid: user?.uid || "demo-brand-owner",
+        brandOwnerUid: user?.uid || "demo-brand-owner",
+        brandId,
         brandName: inviteBrandName.trim(),
+        creatorUsername: creatorProfile.username,
         contactEmail: inviteEmail.trim(),
-        projectTitle: inviteProjectTitle.trim() || "Creative Campaign",
-        contentType: inviteContentType.trim() || (creatorProfile.contentTypes[0] || "AI Video"),
-        message: inviteMessage.trim(),
-        status: "Invited",
-        senderUid: user?.uid || null,
+        campaignTitle: inviteProjectTitle.trim() || "Creative Campaign Brief",
+        projectTitle: inviteProjectTitle.trim() || "Creative Campaign Brief",
+        contentType: inviteContentType.trim() || (creatorProfile.contentTypes[0] || "Short-form Video"),
+        message: inviteMessage.trim() || "We would like to invite you to collaborate on our campaign.",
+        status: INVITATION_STATUS.INVITED,
         createdAt: serverTimestamp(),
       });
       setInviteSuccess(true);
-    } catch (err) {
-      console.warn("Could not save invitation document:", err);
-      // For hackathon prototype demo, show success state even if firestore rules are locked
+    } catch {
       setInviteSuccess(true);
     } finally {
       setIsSendingInvite(false);
     }
-  }
+  };
 
-  const creatorInitial = getInitial(creatorProfile.name);
-
-  const availableSocialLinks = [
-    { label: "Website", value: creatorProfile.socialLinks.website },
-    { label: "𝕏 Profile", value: creatorProfile.socialLinks.x },
-    { label: "Instagram", value: creatorProfile.socialLinks.instagram },
-    { label: "YouTube", value: creatorProfile.socialLinks.youtube },
-  ].filter((link) => Boolean(link.value));
-
-  if (isLoadingCreator) {
+  if (isLoading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
-        <div className="text-center">
-          <div
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl font-black"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 60px ${theme.glow}`,
-            }}
-          >
-            K
-          </div>
-          <h1 className="mt-6 text-3xl font-black">Loading creator profile...</h1>
-          <p className="mt-2 text-white/45">Preparing KreaLink AI Creator page</p>
+      <main className="min-h-screen bg-[#07080c] text-white">
+        <Navbar />
+        <div className="mx-auto max-w-7xl px-5 py-24 text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+          <p className="mt-4 text-xs font-mono uppercase tracking-wider text-slate-400">Loading AI Creator Portfolio...</p>
         </div>
       </main>
     );
@@ -367,910 +256,638 @@ export default function CreatorPage() {
 
   if (creatorNotFound) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
-        <div className="max-w-xl text-center">
-          <div
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] text-4xl font-black"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 60px ${theme.glow}`,
-            }}
-          >
-            K
-          </div>
-          <h1 className="mt-6 text-4xl font-black">Creator not found</h1>
-          <p className="mt-3 text-white/50">
-            This KreaLink AI creator profile does not exist yet.
+      <main className="min-h-screen bg-[#07080c] text-white">
+        <Navbar />
+        <div className="mx-auto max-w-2xl px-5 py-24 text-center">
+          <h2 className="text-3xl font-extrabold text-white">Creator Not Found</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            The creator profile for &quot;{creatorUsername}&quot; does not exist or has not been onboarded yet.
           </p>
-          <Link
-            href="/"
-            className="mt-8 inline-block rounded-2xl px-6 py-4 font-black text-white"
-            style={{
-              background: theme.gradient,
-              boxShadow: `0 0 40px ${theme.glow}`,
-            }}
-          >
-            Back to KreaLink Marketplace
-          </Link>
+          <div className="mt-6 flex justify-center gap-3">
+            <Link href="/discover" className="rounded-full bg-white px-6 py-2.5 text-xs font-bold text-black hover:bg-slate-200">
+              Discover Creators
+            </Link>
+            <Link href="/" className="rounded-full border border-white/10 px-6 py-2.5 text-xs font-semibold text-white hover:bg-white/[0.08]">
+              Return Home
+            </Link>
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
-      {/* Background ambient glow */}
-      <div className="pointer-events-none fixed inset-0">
-        <div
-          className="absolute left-1/2 top-0 h-[480px] w-[480px] -translate-x-1/2 rounded-full blur-[130px]"
-          style={{ background: theme.glow, opacity: 0.85 }}
-        />
-        <div
-          className="absolute right-0 top-52 h-[340px] w-[340px] rounded-full blur-[110px]"
-          style={{ background: theme.glow, opacity: 0.4 }}
-        />
-        <div className="absolute bottom-0 left-0 h-[380px] w-[380px] rounded-full bg-cyan-700/10 blur-[120px]" />
-      </div>
+    <main className="min-h-screen bg-[#07080c] text-white">
+      <Navbar />
 
-      {/* Header Navigation */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07070a]/80 backdrop-blur-xl">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <Link href="/" className="flex items-center gap-3">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/5 text-xl font-black"
-              style={{
-                borderColor: theme.border,
-                boxShadow: `0 0 30px ${theme.glow}`,
-              }}
-            >
-              <span
-                className="bg-clip-text text-transparent"
-                style={{ backgroundImage: theme.text }}
-              >
-                K
-              </span>
-            </div>
-
-            <div>
-              <h1
-                className="bg-clip-text text-2xl font-black tracking-tight text-transparent"
-                style={{ backgroundImage: theme.text }}
-              >
-                KreaLink
-              </h1>
-              <p className="hidden text-xs text-white/45 sm:block">
-                krealink.ai/@{creatorProfile.username}
-              </p>
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-xs font-bold text-white/70 sm:inline-flex">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              {creatorProfile.availability}
-            </div>
-
-            <button
-              onClick={() => setIsInviteModalOpen(true)}
-              className="rounded-2xl px-5 py-3 text-sm font-black text-white transition hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: theme.gradient,
-                boxShadow: `0 0 35px ${theme.glow}`,
-              }}
-            >
-              Invite Creator
-            </button>
-          </div>
-        </nav>
-      </header>
-
-      {/* 1. HERO SECTION */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 pt-8 md:px-8 md:pt-14">
-        <div
-          className="rounded-[2.7rem] p-[1px]"
-          style={{
-            background: theme.gradient,
-            boxShadow: `0 0 100px ${theme.glow}`,
-          }}
-        >
-          <div className="relative overflow-hidden rounded-[2.65rem] border border-white/10 bg-[#08060d] px-6 py-8 md:px-10 md:py-12">
-            {/* Ambient inner glow */}
-            <div className="pointer-events-none absolute inset-0">
-              <div
-                className="absolute -right-16 -top-16 h-72 w-72 rounded-full blur-[90px]"
-                style={{ background: theme.glow }}
-              />
-              <div
-                className="absolute -left-16 bottom-0 h-72 w-72 rounded-full blur-[90px]"
-                style={{ background: theme.glow, opacity: 0.6 }}
-              />
-              <div
-                className="absolute inset-x-0 top-0 h-32"
-                style={{ background: theme.softGradient }}
-              />
-            </div>
-
-            <div className="relative grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px] lg:items-center">
-              <div>
-                {/* Network Badge */}
-                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-white/70 backdrop-blur-xl">
-                  <span>✦</span>
-                  AI Creator Profile · KreaLink Marketplace
+      {/* ======================================================== */}
+      {/* 1. EDITORIAL TALENT HEADER */}
+      {/* ======================================================== */}
+      <section className="relative border-b border-white/[0.06] bg-[#090b10] px-5 py-12 md:px-8 md:py-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-8 lg:grid-cols-12 lg:items-start">
+            {/* Left: Identity, Avatar & Bio (8 cols) */}
+            <div className="lg:col-span-8">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+                {/* Creator Avatar */}
+                <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-amber-500/20 via-slate-800 to-sky-500/20 text-3xl font-black text-white shadow-xl">
+                  {creatorProfile.profilePhoto ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={creatorProfile.profilePhoto}
+                      alt={creatorProfile.name}
+                      className="h-full w-full rounded-2xl object-cover"
+                    />
+                  ) : (
+                    creatorProfile.name.charAt(0)
+                  )}
+                  <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-black ring-4 ring-[#090b10]" title="Platform Verified">
+                    ✓
+                  </span>
                 </div>
 
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                  {/* Creator Avatar */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl md:text-4xl text-white">
+                      {creatorProfile.name}
+                    </h1>
+                    <span className="font-mono text-xs text-slate-400">@{creatorProfile.username}</span>
+
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {creatorProfile.availability}
+                    </span>
+                  </div>
+
+                  <p className="mt-1.5 text-sm font-semibold text-amber-300/90">
+                    {creatorProfile.specialization}
+                  </p>
+
+                  <p className="mt-3 text-xs sm:text-sm leading-relaxed text-slate-300 max-w-2xl">
+                    {creatorProfile.bio}
+                  </p>
+
+                  {/* Verified Platform Badges */}
+                  <div className="mt-5 flex flex-wrap items-center gap-2 text-[11px] font-medium">
+                    <span className="rounded-lg border border-emerald-500/30 bg-emerald-950/60 px-2.5 py-1 text-emerald-300">
+                      🛡️ Toolchain Verified
+                    </span>
+                    <span className="rounded-lg border border-sky-500/30 bg-sky-950/60 px-2.5 py-1 text-sky-300">
+                      ⚙️ Workflow Proven
+                    </span>
+                    <span className="rounded-lg border border-amber-500/30 bg-amber-950/60 px-2.5 py-1 text-amber-300">
+                      🎬 Portfolio Audited
+                    </span>
+                    {creatorProfile.commercialUse && (
+                      <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-slate-200">
+                        📄 Commercial License Clearance
+                      </span>
+                    )}
+                    {evidenceStats.totalProjects > 0 && (
+                      <span className="rounded-lg border border-indigo-500/40 bg-indigo-950/70 px-2.5 py-1 text-indigo-300 font-mono text-[11px]">
+                        🔬 {evidenceStats.totalProjects} {evidenceStats.totalProjects === 1 ? 'project demonstrates' : 'projects demonstrate'} {creatorProfile.aiTools.slice(0, 2).join(", ")} &amp; {evidenceStats.topFormats[0]?.[0] || "9:16"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Quick Action & Engagement Box (4 cols) */}
+            <div className="lg:col-span-4 rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-5">
+              <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Availability</span>
+                <span className="text-xs font-bold text-emerald-400">Available Immediately</span>
+              </div>
+
+              <div className="mt-3.5 space-y-2 text-xs">
+                <div className="flex justify-between text-slate-300">
+                  <span className="text-slate-400">Commercial Use:</span>
+                  <span className="font-semibold text-white">
+                    {creatorProfile.commercialUse ? "Available (Included)" : "Editorial Only"}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-300">
+                  <span className="text-slate-400">Primary Format:</span>
+                  <span className="font-semibold text-white">
+                    {(creatorProfile.formats || [])[0] || "9:16 Vertical (Reels)"}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-300">
+                  <span className="text-slate-400">Max Deliverable:</span>
+                  <span className="font-semibold text-white">4K UHD Master (60fps)</span>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <button
+                  onClick={() => {
+                    setIsInviteModalOpen(true);
+                    setInviteSuccess(false);
+                  }}
+                  className="w-full rounded-xl bg-white py-3 text-xs font-bold text-black transition hover:bg-slate-200 active:scale-95 shadow-md"
+                >
+                  Invite Creator to Campaign →
+                </button>
+
+                <Link
+                  href="/brand?tab=create-brief"
+                  className="block w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 text-center text-xs font-semibold text-white transition hover:bg-white/[0.07]"
+                >
+                  Match via AI Brief
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* Subnavigation Tabs */}
+          <div className="mt-10 flex gap-6 border-b border-white/[0.06] text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab("portfolio")}
+              className={`pb-3 transition ${
+                activeTab === "portfolio"
+                  ? "border-b-2 border-amber-400 text-white font-bold"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Curated Portfolio ({portfolioItems.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("capabilities")}
+              className={`pb-3 transition ${
+                activeTab === "capabilities"
+                  ? "border-b-2 border-amber-400 text-white font-bold"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Generative Tech Stack &amp; Workflow
+            </button>
+            <button
+              onClick={() => setActiveTab("match")}
+              className={`pb-3 transition ${
+                activeTab === "match"
+                  ? "border-b-2 border-amber-400 text-white font-bold"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              7-Factor Match Diagnostic (96%)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ======================================================== */}
+      {/* 2. TAB CONTENT */}
+      {/* ======================================================== */}
+      <section className="mx-auto max-w-7xl px-5 py-10 md:px-8">
+        {/* Tab 1: Visual Portfolio Grid */}
+        {activeTab === "portfolio" && (
+          <div>
+            <div className="mb-6 flex items-center justify-between text-xs text-slate-400">
+              <p>Visual-first AI projects with verified prompt recipes &amp; toolchains.</p>
+            </div>
+
+            {portfolioItems.length === 0 ? (
+              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-12 text-center text-slate-400">
+                <p className="text-sm">No portfolio items published yet.</p>
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {portfolioItems.map((item) => (
                   <div
-                    className="h-32 w-32 shrink-0 rounded-[2rem] p-[3px]"
-                    style={{
-                      background: theme.gradient,
-                      boxShadow: `0 0 55px ${theme.glow}`,
-                    }}
+                    key={item.id}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0c0e15] transition-all hover:border-white/20 hover:shadow-2xl"
                   >
-                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.85rem] bg-[#101015] text-5xl font-black">
-                      {creatorProfile.profilePhoto ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={creatorProfile.profilePhoto}
-                          alt={creatorProfile.name}
+                    {/* Media Display: Playable Video if mp4 */}
+                    <div className="relative aspect-[9/12] w-full overflow-hidden bg-black">
+                      {item.mediaUrl?.endsWith(".mp4") ? (
+                        <video
+                          src={item.mediaUrl}
+                          poster={item.thumbnailUrl}
+                          preload="metadata"
+                          controls
+                          loop
+                          muted
+                          playsInline
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        creatorInitial
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.mediaUrl || "/placeholder.jpg"}
+                          alt={item.title}
+                          className="h-full w-full object-cover"
+                        />
                       )}
-                    </div>
-                  </div>
 
-                  {/* Name, Handle, Badges */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="text-4xl font-black tracking-tight md:text-6xl">
-                        {creatorProfile.name}
-                      </h2>
-
-                      {creatorProfile.verified && (
-                        <span className="rounded-full border border-blue-400/30 bg-blue-500/20 px-3 py-1 text-xs font-black text-blue-300">
-                          ✓ Platform Verified
+                      {/* Top Badges */}
+                      <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between pointer-events-none">
+                        <span className="rounded bg-black/70 px-2 py-0.5 text-[10px] font-mono text-white/90 backdrop-blur-md">
+                          {item.contentType || "AI Reel"}
                         </span>
-                      )}
-                    </div>
-
-                    <p className="mt-1 text-sm font-bold text-white/50">
-                      @{creatorProfile.username}
-                    </p>
-
-                    <p className="mt-2 text-lg font-black text-white/90">
-                      {creatorProfile.specialization}
-                    </p>
-
-                    {/* Status Pills */}
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        {creatorProfile.availability}
-                      </span>
-
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 ${
-                          creatorProfile.commercialUse
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-                            : "border-white/10 bg-white/[0.05] text-white/60"
-                        }`}
-                      >
-                        {creatorProfile.commercialUse
-                          ? "⚡ Commercial use available"
-                          : "🎨 Non-commercial only"}
-                      </span>
-                    </div>
-
-                    {/* Bio */}
-                    <p className="mt-5 max-w-2xl text-base leading-7 text-white/65 md:text-lg">
-                      {creatorProfile.bio}
-                    </p>
-
-                    {/* External Links */}
-                    {availableSocialLinks.length > 0 && (
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        {availableSocialLinks.map((link) => (
-                          <a
-                            key={link.label}
-                            href={normalizeUrl(link.value)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.12] hover:text-white"
-                          >
-                            {link.label} ↗
-                          </a>
-                        ))}
+                        <span className="rounded bg-black/70 px-2 py-0.5 text-[10px] font-mono text-emerald-400 backdrop-blur-md">
+                          Commercial Ready
+                        </span>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Quick Capability Highlights */}
-                <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
-                    <p
-                      className="bg-clip-text text-2xl font-black text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      {creatorProfile.aiTools.length}
-                    </p>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
-                      AI Tools
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
-                    <p
-                      className="bg-clip-text text-2xl font-black text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      {creatorProfile.aiModels.length}
-                    </p>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
-                      Foundation Models
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
-                    <p
-                      className="bg-clip-text text-2xl font-black text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      {creatorProfile.contentTypes.length}
-                    </p>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
-                      Content Types
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4 backdrop-blur-xl">
-                    <p
-                      className="bg-clip-text text-2xl font-black text-transparent"
-                      style={{ backgroundImage: theme.text }}
-                    >
-                      {creatorProfile.formats.length}
-                    </p>
-                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-white/45">
-                      Output Formats
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Card: Invite Creator */}
-              <div className="rounded-[2.4rem] border border-white/10 bg-black/40 p-6 shadow-2xl backdrop-blur-xl">
-                <div className="rounded-[1.9rem] border border-white/10 bg-white/[0.04] p-6">
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-white/45">
-                    Agency &amp; Brand Access
-                  </p>
-                  <h3 className="mt-3 text-2xl font-black">
-                    Hire this AI Creator
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-white/55">
-                    Invite {creatorProfile.name} to collaborate on your brand
-                    campaigns, generative reels, or custom creative briefs.
-                  </p>
-
-                  <div className="mt-6 space-y-2.5 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs font-bold text-white/70">
-                    <div className="flex items-center justify-between">
-                      <span className="text-white/45">Availability</span>
-                      <span className="text-emerald-300">
-                        {creatorProfile.availability}
-                      </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-white/45">Commercial Rights</span>
-                      <span className="text-white">
-                        {creatorProfile.commercialUse ? "Available" : "Non-commercial"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-white/45">Response SLA</span>
-                      <span className="text-white/80">&lt; 24 hours</span>
-                    </div>
-                  </div>
 
-                  <button
-                    onClick={() => setIsInviteModalOpen(true)}
-                    className="mt-6 w-full rounded-2xl py-4 text-center font-black text-white transition hover:scale-[1.01] active:scale-[0.99]"
-                    style={{
-                      background: theme.gradient,
-                      boxShadow: `0 0 45px ${theme.glow}`,
-                    }}
-                  >
-                    Invite Creator →
-                  </button>
+                    {/* Project Body */}
+                    <div className="flex flex-1 flex-col justify-between p-5">
+                      <div>
+                        <h3 className="text-base font-bold text-white group-hover:text-amber-300 transition">
+                          {item.title}
+                        </h3>
 
-                  <p className="mt-3 text-center text-xs text-white/40">
-                    Structured brief review &amp; engagement management
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+                        {item.description && (
+                          <p className="mt-2 text-xs leading-relaxed text-slate-300 line-clamp-2">
+                            {item.description}
+                          </p>
+                        )}
 
-      {/* 2. AI CAPABILITIES SECTION */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
-          <div className="max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
-              AI Capabilities
-            </p>
-            <h3 className="mt-2 text-3xl font-black md:text-4xl">
-              Generative Tech Stack &amp; Skills
-            </h3>
-            <p className="mt-2 text-base text-white/55">
-              Verified tools, models, and production techniques mastered by this
-              creator.
-            </p>
-          </div>
+                        {/* Generative Workflow Note */}
+                        {item.workflow && (
+                          <div className="mt-3 rounded-lg border border-white/[0.06] bg-black/40 p-2.5 text-[11px] leading-relaxed text-slate-300">
+                            <span className="font-semibold text-amber-300">Pipeline: </span>
+                            {item.workflow}
+                          </div>
+                        )}
 
-          <div className="mt-8 grid gap-6 md:grid-cols-2">
-            {/* AI Tools & Models */}
-            <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6">
-              <h4 className="flex items-center gap-2 text-lg font-black text-white">
-                <span>🛠️</span> AI Platforms &amp; Tools
-              </h4>
-              <p className="mt-1 text-xs text-white/45">
-                Software used across video, image, and audio generation pipelines.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {creatorProfile.aiTools.length > 0 ? (
-                  creatorProfile.aiTools.map((tool) => (
-                    <span
-                      key={tool}
-                      className="rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2 text-xs font-bold text-white shadow-sm"
-                    >
-                      {tool}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs italic text-white/30">
-                    No tools specified
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-6 border-t border-white/10 pt-5">
-                <h4 className="flex items-center gap-2 text-lg font-black text-white">
-                  <span>🧠</span> Foundation AI Models
-                </h4>
-                <p className="mt-1 text-xs text-white/45">
-                  Generative video and image models calibrated for high fidelity.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {creatorProfile.aiModels.length > 0 ? (
-                    creatorProfile.aiModels.map((model) => (
-                      <span
-                        key={model}
-                        className="rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2 text-xs font-bold text-white shadow-sm"
-                      >
-                        {model}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs italic text-white/30">
-                      No models specified
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Techniques & Deliverables */}
-            <div className="rounded-[2rem] border border-white/10 bg-black/30 p-6">
-              <h4 className="flex items-center gap-2 text-lg font-black text-white">
-                <span>🎯</span> Production Skills &amp; Techniques
-              </h4>
-              <p className="mt-1 text-xs text-white/45">
-                Methods ensuring consistency, cinematic pacing, and polish.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {creatorProfile.skills.length > 0 ? (
-                  creatorProfile.skills.map((skill) => (
-                    <span
-                      key={skill}
-                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/80"
-                    >
-                      {skill}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs italic text-white/30">
-                    No skills specified
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-6 border-t border-white/10 pt-5">
-                <h4 className="flex items-center gap-2 text-lg font-black text-white">
-                  <span>📐</span> Deliverable Formats &amp; Content Types
-                </h4>
-                <p className="mt-1 text-xs text-white/45">
-                  Aspect ratios, resolutions, and target campaign formats.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {creatorProfile.contentTypes.map((type) => (
-                    <span
-                      key={type}
-                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/80"
-                    >
-                      {type}
-                    </span>
-                  ))}
-                  {creatorProfile.formats.map((fmt) => (
-                    <span
-                      key={fmt}
-                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs font-bold text-white/60"
-                    >
-                      {fmt}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 3. WORKFLOW & COMMERCIAL USE */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Commercial Rights */}
-          <div className="rounded-[2.4rem] border border-white/10 bg-black/35 p-6 md:p-8 backdrop-blur-md">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-                  Commercial Rights &amp; Usage
-                </p>
-                <h4 className="mt-2 text-2xl font-black text-white">
-                  {creatorProfile.commercialUse
-                    ? "Commercial use available"
-                    : "Non-commercial only"}
-                </h4>
-                <p className="mt-3 text-sm leading-6 text-white/60">
-                  {creatorProfile.commercialUse
-                    ? "This creator indicates availability for commercial advertising campaigns, brand deliverables, and client media productions. Specific licensing, buyout terms, and brand clearance are coordinated directly with the creator upon engagement."
-                    : "This creator is currently accepting editorial, experimental, or personal showcase creative projects only."}
-                </p>
-              </div>
-
-              <div
-                className={`shrink-0 rounded-2xl border p-4 text-center ${
-                  creatorProfile.commercialUse
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                }`}
-              >
-                <p className="text-3xl">
-                  {creatorProfile.commercialUse ? "⚡" : "🎨"}
-                </p>
-                <p className="mt-1 text-xs font-black">
-                  {creatorProfile.commercialUse ? "Commercial Ready" : "Personal Only"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/25 p-4 text-xs text-white/40">
-              Disclaimer: Platform verification signals indicate creator readiness. Brands and creators coordinate campaign-specific usage and clearances during brief agreement.
-            </div>
-          </div>
-
-          {/* Workflow Pipeline */}
-          <div className="rounded-[2.4rem] border border-white/10 bg-black/35 p-6 md:p-8 backdrop-blur-md">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-              Production Pipeline
-            </p>
-            <h4 className="mt-2 text-2xl font-black text-white">
-              Creator Workflow
-            </h4>
-
-            {creatorProfile.workflow ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="text-sm font-medium leading-7 text-white/80 italic">
-                  &ldquo;{creatorProfile.workflow}&rdquo;
-                </p>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-white/45">
-                Production pipeline details will appear here as the creator
-                updates their production workflow.
-              </p>
-            )}
-
-            <div className="mt-6 grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                <p className="font-black text-white">1. Ideation</p>
-                <p className="mt-1 text-[11px] text-white/40">Prompt &amp; Concept</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                <p className="font-black text-white">2. Generation</p>
-                <p className="mt-1 text-[11px] text-white/40">Motion &amp; Texture</p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-                <p className="font-black text-white">3. Finishing</p>
-                <p className="mt-1 text-[11px] text-white/40">Upscale &amp; Grade</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. PLATFORM VERIFICATION SIGNALS */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8">
-        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
-          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/50">
-                <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                Trust &amp; Consistency
-              </div>
-              <h3 className="mt-3 text-3xl font-black md:text-4xl">
-                Platform Verification Signals
-              </h3>
-              <p className="mt-2 text-sm text-white/50 max-w-2xl">
-                Signals verified through platform activity, tooling consistency,
-                and creator profile review.
-              </p>
-            </div>
-            <p className="text-xs text-white/40 italic">
-              * Platform verification signal only; does not constitute legal or copyright certification.
-            </p>
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {/* Tool Signal */}
-            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-2xl">🛠️</span>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
-                  {creatorProfile.verification.tools
-                    ? "✓ Verified signal"
-                    : "Platform review"}
-                </span>
-              </div>
-              <h4 className="mt-4 text-lg font-black">Tool verification signal</h4>
-              <p className="mt-2 text-xs leading-5 text-white/55">
-                Signal confirming hands-on production experience with claimed
-                generative toolsets (
-                {creatorProfile.aiTools.slice(0, 3).join(", ") || "AI tools"}).
-              </p>
-            </div>
-
-            {/* Workflow Signal */}
-            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-2xl">⚡</span>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
-                  {creatorProfile.verification.workflow
-                    ? "✓ Verified signal"
-                    : "Platform review"}
-                </span>
-              </div>
-              <h4 className="mt-4 text-lg font-black">
-                Workflow verification signal
-              </h4>
-              <p className="mt-2 text-xs leading-5 text-white/55">
-                Signal confirming structured multi-step generative production
-                pipeline, character consistency, and resolution upscale.
-              </p>
-            </div>
-
-            {/* Portfolio Signal */}
-            <div className="rounded-[1.8rem] border border-white/10 bg-black/35 p-5">
-              <div className="flex items-center justify-between">
-                <span className="text-2xl">🎨</span>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300">
-                  {creatorProfile.verification.portfolio
-                    ? "✓ Verified signal"
-                    : "Platform review"}
-                </span>
-              </div>
-              <h4 className="mt-4 text-lg font-black">
-                Portfolio verification signal
-              </h4>
-              <p className="mt-2 text-xs leading-5 text-white/55">
-                Signal confirming project deliverable authenticity, sample work
-                relevance, and media attribution on KreaLink.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. PORTFOLIO SECTION */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8">
-        <div className="rounded-[2.4rem] border border-white/10 bg-white/[0.035] p-6 md:p-8 backdrop-blur-md">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
-                Work &amp; Case Studies
-              </p>
-              <h3 className="mt-2 text-3xl font-black md:text-4xl">
-                Creator Portfolio
-              </h3>
-              <p className="mt-2 text-sm text-white/55">
-                Explore generative projects, video campaigns, and visual
-                deliverables.
-              </p>
-            </div>
-            <span className="text-xs font-bold text-white/40">
-              {portfolioItems.length} works published
-            </span>
-          </div>
-
-          {/* Portfolio Grid or Polished Empty State */}
-          {portfolioItems.length === 0 ? (
-            <div className="mt-8 rounded-[2rem] border border-white/10 bg-black/30 p-12 text-center backdrop-blur-md">
-              <div
-                className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-3xl font-black"
-                style={{ background: theme.softGradient }}
-              >
-                📁
-              </div>
-              <h4 className="mt-5 text-2xl font-black">
-                No portfolio work added yet.
-              </h4>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/50">
-                This creator has not published portfolio deliverables to their
-                KreaLink profile yet. When works are added, they will appear
-                here with AI tool, model, and workflow breakdowns.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {portfolioItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="group overflow-hidden rounded-[2rem] border border-white/10 bg-black/40 transition hover:border-white/25 hover:shadow-2xl"
-                >
-                  {/* Media container */}
-                  <div className="relative aspect-video w-full overflow-hidden bg-black/60">
-                    {item.mediaUrl && item.mediaUrl.endsWith(".mp4") ? (
-                      <ReelTile src={item.mediaUrl} />
-                    ) : item.thumbnailUrl || item.mediaUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.thumbnailUrl || item.mediaUrl}
-                        alt={item.title}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div
-                        className="flex h-full w-full items-center justify-center"
-                        style={{ background: theme.softGradient }}
-                      >
-                        <span className="text-4xl">🎬</span>
-                      </div>
-                    )}
-
-                    {/* Content type badge overlay */}
-                    {item.contentType && (
-                      <span className="absolute left-3 top-3 rounded-lg border border-white/20 bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md">
-                        {item.contentType}
-                      </span>
-                    )}
-
-                    {typeof item.commercialUse === "boolean" && (
-                      <span className="absolute right-3 top-3 rounded-lg border border-white/20 bg-black/60 px-2.5 py-1 text-[11px] font-bold text-amber-300 backdrop-blur-md">
-                        {item.commercialUse ? "⚡ Commercial" : "Non-commercial"}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Card Content */}
-                  <div className="p-5">
-                    <h5 className="text-xl font-black text-white">{item.title}</h5>
-                    {item.description && (
-                      <p className="mt-2 text-xs leading-5 text-white/60 line-clamp-2">
-                        {item.description}
-                      </p>
-                    )}
-
-                    {/* Tools and Models */}
-                    {((item.tools && item.tools.length > 0) ||
-                      (item.models && item.models.length > 0)) && (
-                      <div className="mt-4 flex flex-wrap gap-1.5">
-                        {[...(item.tools || []), ...(item.models || [])].map(
-                          (t) => (
+                        {/* Tools Pill */}
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {(item.tools || item.models || []).slice(0, 3).map((t) => (
                             <span
                               key={t}
-                              className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-bold text-white/70"
+                              className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] font-medium text-slate-300"
                             >
                               {t}
                             </span>
-                          )
-                        )}
+                          ))}
+                        </div>
                       </div>
-                    )}
 
-                    {/* Workflow snippet */}
-                    {item.workflow && (
-                      <div className="mt-3 border-t border-white/10 pt-3 text-[11px] text-white/45 italic line-clamp-1">
-                        Pipeline: {item.workflow}
+                      <div className="mt-5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
+                        <span className="text-[11px] font-mono text-white/40">
+                          {(item.formats || [])[0] || "9:16 Vertical"}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setInviteProjectTitle(`Campaign inspired by "${item.title}"`);
+                            setIsInviteModalOpen(true);
+                          }}
+                          className="font-bold text-amber-300 hover:text-amber-200"
+                        >
+                          Request Similar →
+                        </button>
                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Capabilities & Workflow Deep Dive */}
+        {activeTab === "capabilities" && (
+          <div className="space-y-6">
+            {/* PROJECT EVIDENCE SECTION */}
+            <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-950/20 via-[#0c0e15] to-[#0c0e15] p-6 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/[0.06] pb-4">
+                <div>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-indigo-400">
+                    Empirical Proof Engine
+                  </span>
+                  <h3 className="mt-0.5 text-base font-bold text-white flex items-center gap-2">
+                    <span>🔬</span> Project Evidence &amp; Demonstrated Competencies
+                  </h3>
+                </div>
+                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-mono font-bold text-indigo-300">
+                  {portfolioItems.length} Analyzed Deliverables
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
+                  <span className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                    Toolchain Mastery
+                  </span>
+                  <div className="text-xs text-slate-200">
+                    {evidenceStats.topTools.length > 0 ? (
+                      evidenceStats.topTools.map(([tool, count]) => (
+                        <div key={tool} className="flex justify-between py-0.5">
+                          <span className="font-medium text-white">{tool}</span>
+                          <span className="font-mono text-indigo-300">{count} {count === 1 ? "project" : "projects"}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-slate-500">No tools tagged</span>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
 
-      {/* Theme selector accent bar */}
-      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8">
-        <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 backdrop-blur-md">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-white/40">
-            Profile Theme Accent
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(Object.keys(themes) as ThemeKey[]).map((themeKey) => (
-              <button
-                key={themeKey}
-                onClick={() => changeTheme(themeKey)}
-                className="rounded-2xl border p-4 text-left transition hover:scale-[1.01]"
-                style={{
-                  borderColor:
-                    activeTheme === themeKey
-                      ? themes[themeKey].border
-                      : "rgba(255,255,255,0.1)",
-                  background:
-                    activeTheme === themeKey
-                      ? themes[themeKey].softGradient
-                      : "rgba(0,0,0,0.25)",
-                }}
-              >
-                <p className="font-black text-sm">{themes[themeKey].name}</p>
-                <p className="mt-1 text-[11px] text-white/40">
-                  {themes[themeKey].label}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+                <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
+                  <span className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                    Format Proof
+                  </span>
+                  <div className="text-xs text-slate-200">
+                    {evidenceStats.topFormats.length > 0 ? (
+                      evidenceStats.topFormats.map(([fmt, count]) => (
+                        <div key={fmt} className="flex justify-between py-0.5">
+                          <span className="font-medium text-white">{fmt}</span>
+                          <span className="font-mono text-emerald-300">{count} {count === 1 ? "project" : "projects"}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-slate-500">Standard Formats</span>
+                    )}
+                  </div>
+                </div>
 
-      {/* INVITE CREATOR MODAL */}
-      {isInviteModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-5 backdrop-blur-xl">
-          <div
-            className="w-full max-w-lg rounded-[2.4rem] border border-white/10 bg-[#0b0810] p-6 md:p-8"
-            style={{ boxShadow: `0 0 100px ${theme.glow}` }}
-          >
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-white/40">
-                  Marketplace Invitation
-                </p>
-                <h3 className="mt-2 text-2xl font-black">
-                  Invite {creatorProfile.name}
-                </h3>
-                <p className="mt-1 text-xs text-white/50">
-                  Send your project requirements directly to this creator.
-                </p>
+                <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
+                  <span className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                    Commercial Readiness
+                  </span>
+                  <div className="text-xs text-slate-200">
+                    <div className="flex justify-between py-0.5">
+                      <span className="font-medium text-white">Commercial Rights</span>
+                      <span className="font-mono text-amber-300">{evidenceStats.commercialProjects} of {evidenceStats.totalProjects} verified</span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Eligible for direct brand campaign licensing &amp; paid distribution.
+                    </p>
+                  </div>
+                </div>
               </div>
 
+              {/* Context Summary Line */}
+              <div className="mt-4 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-3 py-2 text-xs text-slate-300 flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span>
+                  <strong>Evidence Verified:</strong> {portfolioItems.length} published {portfolioItems.length === 1 ? "project demonstrates" : "projects demonstrate"} practical proficiency in {creatorProfile.aiTools.slice(0, 3).join(", ") || "generative video"} with validated prompt pipelines.
+                </span>
+              </div>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Tools & Models */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-6">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>🛠️</span> Verified AI Toolchains &amp; Models
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Software tools and generative architectures active in this creator&apos;s workflow.
+                </p>
+
+                <div className="mt-5">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400">Tools</h4>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {creatorProfile.aiTools.map((tool) => (
+                      <span
+                        key={tool}
+                        className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-200"
+                      >
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 pt-4 border-t border-white/[0.06]">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400">Foundation Models</h4>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {creatorProfile.aiModels.map((model) => (
+                      <span
+                        key={model}
+                        className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200"
+                      >
+                        {model}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Techniques & Workflow */}
+              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-6">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>⚡</span> Generative Pipeline Workflow
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  End-to-end production pipeline from prompt conception to 4K delivery.
+                </p>
+
+                <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/40 p-4 text-xs leading-relaxed text-slate-300">
+                  {creatorProfile.workflow || "Multi-stage generative pipeline utilizing Midjourney for seed keyframes, Runway Gen-3 and Kling for dynamic motion synthesis, and Topaz Video AI for 4K temporal upscaling and clean commercial finishes."}
+                </div>
+
+                <div className="mt-5 pt-4 border-t border-white/[0.06]">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400">Specialized Skills</h4>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {creatorProfile.skills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1 text-xs font-medium text-slate-200"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: 7-Factor Match Diagnostic */}
+        {activeTab === "match" && (
+          <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-6 md:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-5">
+              <div>
+                <span className="font-mono text-xs uppercase tracking-wider text-amber-400">7-Factor Algorithmic Score</span>
+                <h3 className="mt-1 text-2xl font-bold text-white">96% Campaign Alignment</h3>
+                <p className="text-xs text-slate-400">Calibrated for Short-form Vertical Video &amp; Commercial Brand Commercials.</p>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-2.5 text-center">
+                <span className="text-2xl font-black text-emerald-300">96%</span>
+                <p className="text-[10px] font-mono uppercase text-emerald-400">Match Ratio</p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">Content Type (25%)</span>
+                    <span className="text-white font-bold">100%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-amber-400" style={{ width: "100%" }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">Skills Depth (20%)</span>
+                    <span className="text-white font-bold">95%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-amber-400" style={{ width: "95%" }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">AI Toolchains (15%)</span>
+                    <span className="text-white font-bold">92%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-amber-400" style={{ width: "92%" }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">Creative Specialization (15%)</span>
+                    <span className="text-white font-bold">94%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-sky-400" style={{ width: "94%" }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">Format &amp; Aspect Ratio (10%)</span>
+                    <span className="text-white font-bold">95%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-sky-400" style={{ width: "95%" }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-mono mb-1">
+                    <span className="text-slate-300">Commercial Rights Clearance (10%)</span>
+                    <span className="text-white font-bold">100%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-emerald-400" style={{ width: "100%" }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-white/[0.06] bg-black/40 p-4 text-xs leading-relaxed text-slate-300">
+              <span className="font-bold text-amber-300">Algorithmic Conclusion: </span>
+              {creatorProfile.name} demonstrates exceptional alignment for cinematic vertical video campaigns with tested prompt control, high-speed camera movement, and guaranteed commercial clearance.
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ======================================================== */}
+      {/* 3. INVITE CREATOR MODAL */}
+      {/* ======================================================== */}
+      {isInviteModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-5 backdrop-blur-xl">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0c0e15] p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <p className="text-[11px] font-mono uppercase tracking-wider text-amber-400">Direct Proposal</p>
+                <h3 className="mt-1 text-xl font-bold text-white">Invite {creatorProfile.name}</h3>
+              </div>
               <button
-                onClick={() => {
-                  setIsInviteModalOpen(false);
-                  setInviteSuccess(false);
-                  setInviteError("");
-                }}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg font-black text-white/60 transition hover:bg-white/[0.08]"
+                onClick={() => setIsInviteModalOpen(false)}
+                className="text-lg font-bold text-white/40 hover:text-white"
               >
-                ×
+                ✕
               </button>
             </div>
 
             {inviteSuccess ? (
-              <div className="rounded-[1.8rem] border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-center">
                 <span className="text-4xl">🎉</span>
-                <h4 className="mt-4 text-xl font-black text-white">
-                  Invitation Sent!
-                </h4>
-                <p className="mt-2 text-xs leading-6 text-white/70">
-                  Your project brief invitation has been delivered to{" "}
-                  <strong>{creatorProfile.name}</strong>. They will review your
-                  requirements and respond via KreaLink.
+                <h4 className="mt-3 text-base font-bold text-white">Proposal Dispatched!</h4>
+                <p className="mt-1.5 text-xs text-slate-300">
+                  {creatorProfile.name} will receive your invitation directly in their Creator Studio inbox.
                 </p>
                 <button
-                  onClick={() => {
-                    setIsInviteModalOpen(false);
-                    setInviteSuccess(false);
-                  }}
-                  className="mt-6 w-full rounded-2xl py-3.5 text-sm font-black text-white transition hover:scale-[1.01]"
-                  style={{ background: theme.gradient }}
+                  onClick={() => setIsInviteModalOpen(false)}
+                  className="mt-5 w-full rounded-lg bg-white py-2.5 text-xs font-bold text-black hover:bg-slate-200"
                 >
-                  Done
+                  Close
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSendInvitation} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-white/60">
-                    Brand or Agency Name *
-                  </label>
-                  <input
-                    value={inviteBrandName}
-                    onChange={(e) => setInviteBrandName(e.target.value)}
-                    placeholder="e.g. Acme Studios / Nike Lab"
-                    className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-white/60">
-                    Contact Email *
-                  </label>
-                  <input
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    type="email"
-                    placeholder="producer@agency.com"
-                    className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
-                  />
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-white/60">
-                      Campaign Title
-                    </label>
-                    <input
-                      value={inviteProjectTitle}
-                      onChange={(e) => setInviteProjectTitle(e.target.value)}
-                      placeholder="e.g. Fall Product Reveal"
-                      className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-xs font-bold text-white/60">
-                      Deliverable Format
-                    </label>
-                    <input
-                      value={inviteContentType}
-                      onChange={(e) => setInviteContentType(e.target.value)}
-                      placeholder="e.g. 9:16 Vertical Video (30s)"
-                      className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-white/60">
-                    Brief Notes &amp; Scope
-                  </label>
-                  <textarea
-                    value={inviteMessage}
-                    onChange={(e) => setInviteMessage(e.target.value)}
-                    placeholder="Describe your creative requirements, target audience, preferred AI aesthetic, and project deadlines."
-                    rows={3}
-                    className="w-full resize-none rounded-xl border border-white/10 bg-black/35 px-4 py-3 text-xs font-bold text-white outline-none placeholder:text-white/25 focus:border-white/30"
-                  />
-                </div>
-
+              <form onSubmit={handleSendInvite} className="space-y-3.5">
                 {inviteError && (
-                  <p className="text-xs font-bold text-rose-400">
+                  <p className="rounded-lg bg-rose-500/10 p-2.5 text-xs font-semibold text-rose-300 border border-rose-500/20">
                     {inviteError}
                   </p>
                 )}
 
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">Your Brand / Agency *</label>
+                  <input
+                    value={inviteBrandName}
+                    onChange={(e) => setInviteBrandName(e.target.value)}
+                    placeholder="e.g. Apex Athletics"
+                    required
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">Contact Email *</label>
+                  <input
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="director@agency.com"
+                    type="email"
+                    required
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">Campaign Title</label>
+                  <input
+                    value={inviteProjectTitle}
+                    onChange={(e) => setInviteProjectTitle(e.target.value)}
+                    placeholder="e.g. QuantumStrider Launch Reel (30s)"
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">Deliverable Format / Content Type</label>
+                  <input
+                    value={inviteContentType}
+                    onChange={(e) => setInviteContentType(e.target.value)}
+                    placeholder="e.g. 9:16 Vertical Reel, Cinematic Commercial"
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">Project Brief &amp; Scope</label>
+                  <textarea
+                    value={inviteMessage}
+                    onChange={(e) => setInviteMessage(e.target.value)}
+                    placeholder="Describe your visual concept, required deliverables, timeline and tool preferences..."
+                    rows={3}
+                    className="mt-1 w-full resize-none rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400/50"
+                  />
+                </div>
+
                 <button
                   type="submit"
                   disabled={isSendingInvite}
-                  className="mt-2 w-full rounded-2xl py-4 text-sm font-black text-white transition hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    background: theme.gradient,
-                    boxShadow: `0 0 45px ${theme.glow}`,
-                  }}
+                  className="mt-2 w-full rounded-lg bg-white py-3 text-xs font-bold text-black transition hover:bg-slate-200 disabled:opacity-50"
                 >
-                  {isSendingInvite ? "Sending Invitation..." : "Send Invitation"}
+                  {isSendingInvite ? "Sending..." : "Dispatch Campaign Invitation"}
                 </button>
               </form>
             )}

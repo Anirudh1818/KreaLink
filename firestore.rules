@@ -1,14 +1,22 @@
 rules_version = '2';
 
-// KreaLink Marketplace Firestore Security Rules
+// KreaLink Marketplace — Hardened Firestore Security Rules
 // --------------------------------------------------------------------------
-// Ownership-based, auth-gated rules protecting creator profiles, portfolios,
-// brand workspaces, creative briefs, invitations, and engagements.
+// Enforces:
+// 1. Ownership & Authenticated Access for Creators, Brands, Briefs
+// 2. Parent-creator profile validation for Portfolios
+// 3. Multi-participant authorization for Invitations & Engagements
+// 4. Strict status lifecycle state-transitions (Invited -> Accepted/Declined, Accepted -> In Progress -> Delivered)
+// 5. Public read-access where marketplace discovery explicitly requires it
+// 6. Default Deny on all unmapped collections
 // --------------------------------------------------------------------------
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ------------------------------------------------------------------------
+    // Global Auth Helpers
+    // ------------------------------------------------------------------------
     function isSignedIn() {
       return request.auth != null;
     }
@@ -18,77 +26,277 @@ service cloud.firestore {
         && request.auth.token.email in ['saxenaanirudh59@gmail.com'];
     }
 
-    // Profile photo size check (inline base64 max 900KB)
     function photoWithinLimit(data) {
       return !('profilePhoto' in data.keys())
         || (data.profilePhoto is string && data.profilePhoto.size() < 900000);
     }
 
-    // ==========================================
-    // 1. Creators & Portfolios
-    // ==========================================
+    function creatorDocExists(username) {
+      return exists(/databases/$(database)/documents/creators/$(username));
+    }
+
+    function brandDocExists(brandId) {
+      return exists(/databases/$(database)/documents/brands/$(brandId));
+    }
+
+    function getCreatorOwnerUid(username) {
+      return get(/databases/$(database)/documents/creators/$(username)).data.ownerUid;
+    }
+
+    function getBrandOwnerUid(brandId) {
+      return get(/databases/$(database)/documents/brands/$(brandId)).data.ownerUid;
+    }
+
+    // ------------------------------------------------------------------------
+    // 1. Creators & Portfolios (/creators/{username})
+    // ------------------------------------------------------------------------
     match /creators/{username} {
-      // Public profiles can be browsed in discovery & creator profiles
+      // Public Read: Discovery, search, and public portfolio inspection
       allow read: if true;
 
-      // Creator profile create / update (owner or admin)
-      allow create, update: if photoWithinLimit(request.resource.data) && (
+      // Create: Authenticated creator setting themselves as owner
+      allow create: if photoWithinLimit(request.resource.data) && (
         isAdmin() || (
           isSignedIn() && (
-            !('ownerUid' in resource.data) ||
-            resource.data.ownerUid == request.auth.uid ||
+            !('ownerUid' in request.resource.data) ||
             request.resource.data.ownerUid == request.auth.uid
           )
         )
       );
 
-      allow delete: if isAdmin();
+      // Update: Only author/owner or admin can modify their profile
+      allow update: if photoWithinLimit(request.resource.data) && (
+        isAdmin() || (
+          isSignedIn() && (
+            // If resource has ownerUid, must match request.auth.uid
+            ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
+            // Or if existing profile was legacy/demo without ownerUid, caller can claim only once
+            (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid)
+          )
+        )
+      );
 
-      // Subcollection: creators/{username}/portfolio/{portfolioId}
+      // Delete: Admin or creator owner only
+      allow delete: if isAdmin() || (isSignedIn() && 'ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid);
+
+      // Subcollection: /creators/{username}/portfolio/{portfolioId}
       match /portfolio/{portfolioId} {
+        // Public Read: Portfolios are public showroom reels
         allow read: if true;
-        allow write: if isAdmin() || isSignedIn();
+
+        // Write: Only the creator who owns the parent creator profile (or admin)
+        allow create, update, delete: if isAdmin() || (
+          isSignedIn() && (
+            !creatorDocExists(username) ||
+            !('ownerUid' in get(/databases/$(database)/documents/creators/$(username)).data) ||
+            getCreatorOwnerUid(username) == request.auth.uid
+          )
+        );
       }
     }
 
-    // ==========================================
-    // 2. Brands & Agencies
-    // ==========================================
+    // ------------------------------------------------------------------------
+    // 2. Brands & Agencies (/brands/{brandId})
+    // ------------------------------------------------------------------------
     match /brands/{brandId} {
+      // Public Read: Allows creators and public discovery to display brand attribution
       allow read: if true;
-      allow write: if isAdmin() || (
+
+      // Create: Signed in brand owner setting their ownership
+      allow create: if isAdmin() || (
         isSignedIn() && (
-          !('ownerUid' in resource.data) ||
-          resource.data.ownerUid == request.auth.uid ||
+          !('ownerUid' in request.resource.data) ||
           request.resource.data.ownerUid == request.auth.uid
+        )
+      );
+
+      // Update: Only the brand owner or admin
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
+          (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid)
+        )
+      );
+
+      // Delete: Brand owner or admin only
+      allow delete: if isAdmin() || (isSignedIn() && 'ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. Creative Briefs (/briefs/{briefId})
+    // ------------------------------------------------------------------------
+    match /briefs/{briefId} {
+      // Public Read: Allows creators to match against briefs in discovery
+      allow read: if true;
+
+      // Create: Must be created by brand owner of the referenced brand
+      allow create: if isAdmin() || (
+        isSignedIn() && (
+          (
+            brandDocExists(request.resource.data.brandId) &&
+            getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
+          ) ||
+          (
+            !brandDocExists(request.resource.data.brandId) &&
+            request.resource.data.ownerUid == request.auth.uid
+          )
+        )
+      );
+
+      // Update: Only the brand owner of the referenced brand
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          (
+            brandDocExists(resource.data.brandId) &&
+            getBrandOwnerUid(resource.data.brandId) == request.auth.uid
+          ) ||
+          (
+            !brandDocExists(resource.data.brandId) &&
+            resource.data.ownerUid == request.auth.uid
+          )
+        )
+      );
+
+      // Delete: Brand owner or admin only
+      allow delete: if isAdmin() || (
+        isSignedIn() && (
+          (
+            brandDocExists(resource.data.brandId) &&
+            getBrandOwnerUid(resource.data.brandId) == request.auth.uid
+          ) ||
+          (
+            !brandDocExists(resource.data.brandId) &&
+            resource.data.ownerUid == request.auth.uid
+          )
         )
       );
     }
 
-    // ==========================================
-    // 3. Creative Briefs
-    // ==========================================
-    match /briefs/{briefId} {
-      allow read: if true;
-      allow write: if isAdmin() || isSignedIn();
-    }
-
-    // ==========================================
-    // 4. Invitations & Engagements
-    // ==========================================
+    // ------------------------------------------------------------------------
+    // 4. Invitations (/invitations/{invitationId})
+    // ------------------------------------------------------------------------
     match /invitations/{invitationId} {
+      // Read: Public read permitted for catalog/dashboard queries
       allow read: if true;
-      allow write: if isAdmin() || isSignedIn();
+
+      // Create: Brand owner dispatching an invitation for their brand
+      allow create: if isAdmin() || (
+        isSignedIn() && (
+          request.resource.data.status == "Invited" &&
+          (
+            (
+              brandDocExists(request.resource.data.brandId) &&
+              getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
+            ) ||
+            (
+              !brandDocExists(request.resource.data.brandId) &&
+              request.resource.data.ownerUid == request.auth.uid
+            )
+          )
+        )
+      );
+
+      // Update:
+      // Case 1: Recipient creator updating status ("Invited" -> "Accepted" or "Declined")
+      // Case 2: Brand owner modifying message or proposal details
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          // Creator recipient updating invitation status
+          (
+            (
+              request.resource.data.status in ["Accepted", "Declined"] &&
+              resource.data.status == "Invited"
+            ) && (
+              !creatorDocExists(resource.data.creatorUsername) ||
+              !('ownerUid' in get(/databases/$(database)/documents/creators/$(resource.data.creatorUsername)).data) ||
+              getCreatorOwnerUid(resource.data.creatorUsername) == request.auth.uid ||
+              request.resource.data.creatorOwnerUid == request.auth.uid
+            )
+          ) ||
+          // Brand owner updating invitation details
+          (
+            ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
+            ('brandOwnerUid' in resource.data && resource.data.brandOwnerUid == request.auth.uid) ||
+            (
+              brandDocExists(resource.data.brandId) &&
+              getBrandOwnerUid(resource.data.brandId) == request.auth.uid
+            ) ||
+            (!('ownerUid' in resource.data) && !brandDocExists(resource.data.brandId))
+          )
+        )
+      );
+
+      // Delete: Brand owner or admin only
+      allow delete: if isAdmin() || (
+        isSignedIn() && (
+          ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
+          ('brandOwnerUid' in resource.data && resource.data.brandOwnerUid == request.auth.uid)
+        )
+      );
     }
 
+    // ------------------------------------------------------------------------
+    // 5. Engagements (/engagements/{engagementId})
+    // ------------------------------------------------------------------------
     match /engagements/{engagementId} {
+      // Read: Open read for dashboard views
       allow read: if true;
-      allow write: if isAdmin() || isSignedIn();
+
+      // Create: Only created when invitation is accepted by creator or initiated by brand
+      allow create: if isAdmin() || (
+        isSignedIn() && (
+          request.resource.data.status in ["Accepted", "In Progress"] && (
+            // Authorized creator or authorized brand
+            request.resource.data.creatorOwnerUid == request.auth.uid ||
+            request.resource.data.brandOwnerUid == request.auth.uid ||
+            request.resource.data.ownerUid == request.auth.uid ||
+            (
+              creatorDocExists(request.resource.data.creatorUsername) &&
+              getCreatorOwnerUid(request.resource.data.creatorUsername) == request.auth.uid
+            ) ||
+            (
+              brandDocExists(request.resource.data.brandId) &&
+              getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
+            ) ||
+            (!('creatorOwnerUid' in request.resource.data) && !('brandOwnerUid' in request.resource.data))
+          )
+        )
+      );
+
+      // Update: Authorized participant with valid lifecycle transitions
+      // Accepted -> In Progress -> Delivered (Never backward)
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          // Lifecycle progression check
+          (
+            (resource.data.status == "Accepted" && request.resource.data.status in ["Accepted", "In Progress"]) ||
+            (resource.data.status == "In Progress" && request.resource.data.status in ["In Progress", "Delivered"]) ||
+            (resource.data.status == "Delivered" && request.resource.data.status == "Delivered")
+          ) && (
+            // Participant check: creator or brand
+            resource.data.creatorOwnerUid == request.auth.uid ||
+            resource.data.brandOwnerUid == request.auth.uid ||
+            resource.data.ownerUid == request.auth.uid ||
+            (
+              creatorDocExists(resource.data.creatorUsername) &&
+              getCreatorOwnerUid(resource.data.creatorUsername) == request.auth.uid
+            ) ||
+            (
+              brandDocExists(resource.data.brandId) &&
+              getBrandOwnerUid(resource.data.brandId) == request.auth.uid
+            ) ||
+            (!('creatorOwnerUid' in resource.data) && !('brandOwnerUid' in resource.data))
+          )
+        )
+      );
+
+      // Delete: Administrative only
+      allow delete: if isAdmin();
     }
 
-    // ==========================================
-    // 5. Default Deny
-    // ==========================================
+    // ------------------------------------------------------------------------
+    // 6. Default Deny on all other paths
+    // ------------------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
     }

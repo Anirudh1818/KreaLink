@@ -1,6 +1,6 @@
 export type ThemeKey = "flame" | "social" | "royal" | "neon";
 
-export type FanStreakTheme = {
+export type KreaLinkTheme = {
   name: string;
   label: string;
   description: string;
@@ -9,55 +9,62 @@ export type FanStreakTheme = {
   glow: string;
   border: string;
   text: string;
+  accent: string;
 };
 
-export const themes: Record<ThemeKey, FanStreakTheme> = {
+export type FanStreakTheme = KreaLinkTheme;
+
+export const themes: Record<ThemeKey, KreaLinkTheme> = {
   flame: {
-    name: "FanStreak Flame",
-    label: "Default",
-    description: "Pink-orange creator energy built for premium fandom pages.",
-    gradient: "linear-gradient(135deg, #ec4899, #f43f5e, #f97316)",
+    name: "Cyber Indigo",
+    label: "AI Flagship",
+    description: "Electric indigo and surgical violet engineered for high-performance generative AI platforms.",
+    gradient: "linear-gradient(135deg, #6366f1, #8b5cf6, #7c3aed)",
     softGradient:
-      "linear-gradient(135deg, rgba(236,72,153,0.24), rgba(244,63,94,0.14), rgba(249,115,22,0.22))",
-    glow: "rgba(236,72,153,0.35)",
-    border: "rgba(236,72,153,0.55)",
-    text: "linear-gradient(90deg, #f9a8d4, #fda4af, #fdba74)",
+      "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.10), rgba(124,58,237,0.14))",
+    glow: "rgba(99,102,241,0.22)",
+    border: "rgba(99,102,241,0.38)",
+    text: "linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)",
+    accent: "#6366f1",
   },
 
   social: {
-    name: "Social Glow",
-    label: "Insta-style",
-    description: "Familiar pink-purple-orange social profile energy.",
-    gradient: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af, #515bd4)",
+    name: "Quantum Cyan",
+    label: "AI Intelligence",
+    description: "Deep oceanic azure and precision cyan engineered for generative intelligence interfaces.",
+    gradient: "linear-gradient(135deg, #0ea5e9, #0284c7, #0369a1)",
     softGradient:
-      "linear-gradient(135deg, rgba(245,133,41,0.22), rgba(221,42,123,0.20), rgba(129,52,175,0.18), rgba(81,91,212,0.18))",
-    glow: "rgba(221,42,123,0.38)",
-    border: "rgba(221,42,123,0.55)",
-    text: "linear-gradient(90deg, #fbbf24, #fb7185, #c084fc, #818cf8)",
+      "linear-gradient(135deg, rgba(14,165,233,0.18), rgba(2,132,199,0.10), rgba(3,105,161,0.14))",
+    glow: "rgba(14,165,233,0.22)",
+    border: "rgba(14,165,233,0.38)",
+    text: "linear-gradient(180deg, #ffffff 0%, #bae6fd 100%)",
+    accent: "#0ea5e9",
   },
 
   royal: {
-    name: "Royal Circle",
-    label: "Premium",
-    description: "Purple-gold celebrity look for high-status fan communities.",
-    gradient: "linear-gradient(135deg, #7c3aed, #c026d3, #f59e0b)",
+    name: "Obsidian Titanium",
+    label: "Monochrome Luxury",
+    description: "Pure platinum and titanium luster for premium luxury brand collaborations.",
+    gradient: "linear-gradient(135deg, #f8fafc, #cbd5e1, #94a3b8)",
     softGradient:
-      "linear-gradient(135deg, rgba(124,58,237,0.24), rgba(192,38,211,0.16), rgba(245,158,11,0.20))",
-    glow: "rgba(192,38,211,0.34)",
-    border: "rgba(245,158,11,0.45)",
-    text: "linear-gradient(90deg, #c4b5fd, #f0abfc, #fde68a)",
+      "linear-gradient(135deg, rgba(248,250,252,0.15), rgba(203,213,225,0.08), rgba(148,163,184,0.12))",
+    glow: "rgba(248,250,252,0.18)",
+    border: "rgba(203,213,225,0.32)",
+    text: "linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)",
+    accent: "#f8fafc",
   },
 
   neon: {
-    name: "Neon Arena",
-    label: "Live",
-    description: "Electric green-blue theme for streamers, gamers and live creators.",
-    gradient: "linear-gradient(135deg, #10b981, #06b6d4, #3b82f6)",
+    name: "Emerald Signal",
+    label: "Verified Pipeline",
+    description: "Precision tech green indicating verified workflows, commercial rights, and real-time execution.",
+    gradient: "linear-gradient(135deg, #10b981, #059669, #047857)",
     softGradient:
-      "linear-gradient(135deg, rgba(16,185,129,0.22), rgba(6,182,212,0.18), rgba(59,130,246,0.18))",
-    glow: "rgba(6,182,212,0.35)",
-    border: "rgba(6,182,212,0.55)",
-    text: "linear-gradient(90deg, #6ee7b7, #67e8f9, #93c5fd)",
+      "linear-gradient(135deg, rgba(16,185,129,0.18), rgba(5,150,105,0.10), rgba(4,120,87,0.14))",
+    glow: "rgba(16,185,129,0.22)",
+    border: "rgba(16,185,129,0.38)",
+    text: "linear-gradient(180deg, #ffffff 0%, #a7f3d0 100%)",
+    accent: "#10b981",
   },
 };
 

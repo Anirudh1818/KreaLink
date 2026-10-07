@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { useStoredTheme } from "@/lib/use-theme";
 import { Navbar } from "@/components/Navbar";
 
 export default function AccountHubPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, signOutUser } = useAuth();
   const { theme } = useStoredTheme();
 
   if (loading) {
@@ -61,7 +59,7 @@ export default function AccountHubPage() {
           </div>
 
           <button
-            onClick={() => signOut(auth)}
+            onClick={() => signOutUser()}
             className="w-fit rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/10"
           >
             Sign Out

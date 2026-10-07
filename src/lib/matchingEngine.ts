@@ -220,3 +220,8 @@ export function rankCreatorsForBrief(
   const scored = creators.map((creator) => calculateMatchScore(brief, creator));
   return scored.sort((a, b) => b.overallScore - a.overallScore);
 }
+
+// Re-export AI 2.0 Multi-Signal Matching Engine
+export * from "./ai/matchingEngine2";
+export * from "./ai/creatorIntelligence";
+
