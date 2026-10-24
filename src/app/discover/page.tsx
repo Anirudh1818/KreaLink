@@ -650,21 +650,113 @@ export default function DiscoverPage() {
             ))}
           </div>
         ) : filteredAndRankedCreators.length === 0 ? (
-          /* Empty State */
-          <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-12 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-2xl">
-              🔍
+          /* Empty State with Smart Relaxation */
+          <div className="space-y-8">
+            <div className="rounded-2xl border border-amber-500/25 bg-amber-950/10 p-8 text-center max-w-2xl mx-auto">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-xl text-amber-300">
+                ⚡
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-white">No creators match all filters simultaneously.</h3>
+              <p className="mx-auto mt-1 max-w-md text-xs text-slate-300">
+                Your combination of criteria is very specific. Try relaxing individual filters below or view recommended AI creators.
+              </p>
+              
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {selectedTool && (
+                  <button
+                    onClick={() => setSelectedTool("")}
+                    className="rounded-full border border-sky-400/40 bg-sky-950/60 px-3 py-1 text-[11px] font-mono text-sky-200 hover:bg-sky-900/60 transition"
+                  >
+                    Remove Tool: {selectedTool} ✕
+                  </button>
+                )}
+                {selectedSpecialization && (
+                  <button
+                    onClick={() => setSelectedSpecialization("")}
+                    className="rounded-full border border-purple-400/40 bg-purple-950/60 px-3 py-1 text-[11px] font-mono text-purple-200 hover:bg-purple-900/60 transition"
+                  >
+                    Remove Specialization ✕
+                  </button>
+                )}
+                {selectedSkill && (
+                  <button
+                    onClick={() => setSelectedSkill("")}
+                    className="rounded-full border border-emerald-400/40 bg-emerald-950/60 px-3 py-1 text-[11px] font-mono text-emerald-200 hover:bg-emerald-900/60 transition"
+                  >
+                    Remove Skill ✕
+                  </button>
+                )}
+                {selectedFormat && (
+                  <button
+                    onClick={() => setSelectedFormat("")}
+                    className="rounded-full border border-amber-400/40 bg-amber-950/60 px-3 py-1 text-[11px] font-mono text-amber-200 hover:bg-amber-900/60 transition"
+                  >
+                    Remove Format ✕
+                  </button>
+                )}
+                <button
+                  onClick={resetFilters}
+                  className="rounded-full bg-white px-4 py-1 text-[11px] font-bold text-black hover:bg-slate-200 transition"
+                >
+                  Reset All Filters
+                </button>
+              </div>
             </div>
-            <h3 className="mt-4 text-xl font-bold text-white">No creators match your exact criteria.</h3>
-            <p className="mx-auto mt-2 max-w-md text-xs text-slate-400">
-              Try relaxing your filters or searching for different generative tools and models.
-            </p>
-            <button
-              onClick={resetFilters}
-              className="mt-6 rounded-full bg-white px-6 py-2.5 text-xs font-bold text-black transition hover:bg-slate-200"
-            >
-              Reset All Filters
-            </button>
+
+            {/* Smart Relaxation: Featured Creator Suggestions */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Recommended AI Creators Across Network</span>
+                  </h4>
+                  <p className="text-xs text-slate-400">Verified creators with high multi-model capability overlap.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {creators.slice(0, 3).map((creator) => (
+                  <div
+                    key={creator.username}
+                    className="flex flex-col justify-between rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-5 hover:border-white/20 transition"
+                  >
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-xl overflow-hidden bg-slate-800 border border-white/10 shrink-0">
+                          <img
+                            src={creator.profilePhoto || "/creators/paultrillo/pfp.jpg"}
+                            alt={creator.name}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white">{creator.name}</h4>
+                          <p className="text-[11px] text-slate-400">@{creator.username} · {creator.specialization}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-300 line-clamp-2 leading-relaxed">{creator.bio}</p>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {(creator.aiTools || []).slice(0, 3).map((t) => (
+                          <span key={t} className="rounded bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 text-[10px] text-sky-300 font-mono">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-emerald-400 font-semibold">✓ Platform Verified</span>
+                      <Link
+                        href={`/${creator.username}`}
+                        className="rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 px-3 py-1 text-xs font-semibold text-white transition"
+                      >
+                        Inspect Portfolio →
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           /* Creator Cards Grid */

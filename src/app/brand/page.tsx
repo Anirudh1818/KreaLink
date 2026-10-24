@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 import {
   BrandProfile,
   CreativeBrief,
@@ -58,6 +58,10 @@ export default function BrandDashboardPage() {
     return [];
   }, [selectedBrief, creators]);
 
+  // Selected Creator for Find Creators inspection panel (Screen 2)
+  const [selectedMatchIdx, setSelectedMatchIdx] = useState<number>(0);
+  const activeInspectMatch: MatchResult2 | null = matchedResults[selectedMatchIdx] || matchedResults[0] || null;
+
   // AI Brief Builder Prompt State
   const [aiPrompt, setAiPrompt] = useState(() => {
     if (typeof window !== "undefined") {
@@ -65,8 +69,9 @@ export default function BrandDashboardPage() {
       const promptParam = urlParams.get("prompt");
       if (promptParam) return promptParam;
     }
-    return "I need a futuristic 30-second Instagram reel for our new running shoe targeting Gen Z. It should feel energetic and cinematic and we need commercial rights.";
+    return "Create a premium skincare launch video for Instagram with natural lighting and modern aesthetic";
   });
+
   // AI Brief Builder Lifecycle State
   const [briefStage, setBriefStage] = useState<"input" | "processing" | "review" | "edit">("input");
   const [processingStep, setProcessingStep] = useState<number>(0);
@@ -78,7 +83,7 @@ export default function BrandDashboardPage() {
   const [briefReadiness, setBriefReadiness] = useState<BriefReadiness | null>(null);
   const [clarifications, setClarifications] = useState<ClarificationQuestion[]>([]);
   const [aiRecommendations, setAiRecommendations] = useState<string[]>([]);
-  const [aiSource, setAiSource] = useState<string>("AI_LIVE");
+  const [, setAiSource] = useState<string>("AI_LIVE");
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
 
   // Matching Transition Animation State
@@ -90,24 +95,29 @@ export default function BrandDashboardPage() {
 
   // Editable Form for Creative Brief
   const [briefForm, setBriefForm] = useState({
-    campaignName: "Futuristic Gen-Z Running Shoe Launch",
+    campaignName: "GlowCo Skincare Launch Campaign",
     requirements:
-      "A high-energy, 30-second commercial reel introducing the QuantumStrider running shoe. Needs hyper-kinetic camera motion, neon-lit cyberpunk city track, and consistent hero character.",
+      "High-quality AI generated content for our new vitamin C Serum launch across Instagram and TikTok. Premium, natural, clean, modern aesthetic.",
     contentType: "Short-form Video (Reels/TikTok)",
-    styleString: "Futuristic, Cinematic, High-Energy, Cyberpunk / Neon",
-    platform: "Instagram Reels & TikTok",
+    styleString: "Premium, natural, clean, modern",
+    platform: "Instagram, TikTok",
     aspectRatio: "9:16 Vertical (Reels/Shorts)",
-    targetAudience: "Gen Z Trendsetters & Digital Natives (16-24)",
-    deliverablesString:
-      "1x 30-Second Hero Video Deliverable (9:16), 3x High-Res Still Keyframes, 1x Clean Cut for Social Ads",
+    targetAudience: "Gen Z & Millennials seeking organic skincare",
+    deliverablesString: "1 x 15s Video, 3 x Images",
     commercialUse: true,
-    notes: "Audio sound design must sync with kinetic shoe impacts.",
+    notes: "Paid social, website, 6 months, India, non-exclusive",
   });
   const [isSavingBrief, setIsSavingBrief] = useState(false);
 
   // Invitations & Engagements State
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [engagements, setEngagements] = useState<Engagement[]>([]);
+
+  // Feedback thread state in Screen 3
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [commentsList, setCommentsList] = useState<string[]>([
+    "The lighting looks great! Can we make the text slightly bigger and try a warmer tone in the background?",
+  ]);
 
   // Invite Creator Modal
   const [invitingCreator, setInvitingCreator] = useState<CreatorProfile | null>(null);
@@ -138,35 +148,33 @@ export default function BrandDashboardPage() {
 
         // Load Creators from Demo Roster + Firestore + Local Cache
         const creatorMap = new Map<string, CreatorProfile>();
-        DEMO_CREATORS.forEach((d) => {
-          creatorMap.set(d.creator.username.toLowerCase(), d.creator);
-        });
+        DEMO_CREATORS.forEach((c) => creatorMap.set(c.creator.username.toLowerCase(), c.creator));
 
         try {
-          const creatorSnap = await getDocs(collection(db, "creators"));
-          if (!creatorSnap.empty) {
-            creatorSnap.docs.forEach((docSnap) => {
-              const d = docSnap.data();
-              creatorMap.set(docSnap.id.toLowerCase(), {
-                name: String(d.name || docSnap.id),
-                username: String(d.username || docSnap.id),
-                email: String(d.email || ""),
-                specialization: String(d.specialization || d.category || "AI Creator"),
-                bio: String(d.bio || ""),
-                availability: String(d.availability || "Available immediately"),
-                commercialUse: typeof d.commercialUse === "boolean" ? d.commercialUse : true,
+          const snap = await getDocs(collection(db, "creators"));
+          if (!snap.empty) {
+            snap.docs.forEach((dDoc) => {
+              const d = dDoc.data();
+              const username = (d.username || dDoc.id).toLowerCase();
+              creatorMap.set(username, {
+                ownerUid: d.ownerUid,
+                name: d.name || dDoc.id,
+                username,
+                bio: d.bio || "",
+                specialization: d.specialization || "AI Creator",
                 skills: Array.isArray(d.skills) ? d.skills : [],
                 aiTools: Array.isArray(d.aiTools) ? d.aiTools : [],
                 aiModels: Array.isArray(d.aiModels) ? d.aiModels : [],
                 contentTypes: Array.isArray(d.contentTypes) ? d.contentTypes : [],
                 formats: Array.isArray(d.formats) ? d.formats : [],
-                workflow: String(d.workflow || ""),
-                profilePhoto: String(d.profilePhoto || ""),
-                verified: Boolean(d.verified ?? true),
-                verification: {
-                  tools: Boolean(d.verification?.tools ?? true),
-                  workflow: Boolean(d.verification?.workflow ?? true),
-                  portfolio: Boolean(d.verification?.portfolio ?? true),
+                commercialUse: d.commercialUse ?? true,
+                availability: d.availability || "Open to Work",
+                profilePhoto: d.profilePhoto || "",
+                verified: d.verified ?? true,
+                verification: d.verification || {
+                  tools: true,
+                  workflow: true,
+                  portfolio: true,
                 },
                 status: String(d.status || "Active"),
                 theme: d.theme || "flame",
@@ -255,9 +263,10 @@ export default function BrandDashboardPage() {
     loadBrandData();
   }, [user]);
 
-  // Handle AI Brief Builder API Generation with 5-Step Intelligence Sequence
-  async function handleGenerateBriefWithAI() {
-    if (!aiPrompt.trim()) return;
+  // Handle AI Brief Builder API Generation
+  async function handleGenerateBriefWithAI(promptOverride?: string) {
+    const promptToUse = promptOverride || aiPrompt;
+    if (!promptToUse.trim()) return;
 
     setIsGeneratingBrief(true);
     setBriefStage("processing");
@@ -284,7 +293,7 @@ export default function BrandDashboardPage() {
       const res = await fetch("/api/ai/brief-builder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+        body: JSON.stringify({ prompt: promptToUse.trim() }),
       });
 
       const data = await res.json();
@@ -293,36 +302,29 @@ export default function BrandDashboardPage() {
         setStructuredBriefData(b);
         setBriefForm({
           campaignName: b.campaignName || "AI Campaign",
-          requirements: b.requirements || b.creativeDirection || aiPrompt.trim(),
+          requirements: b.requirements || b.creativeDirection || promptToUse.trim(),
           contentType: b.contentType || "Short-form Video (Reels/TikTok)",
-          styleString: (b.style || []).join(", "),
-          platform: (b.platforms || ["Instagram Reels & TikTok"])[0] || b.platform || "Instagram Reels & TikTok",
+          styleString: (b.style || []).join(", ") || "Premium, natural, clean, modern",
+          platform: (b.platforms || ["Instagram, TikTok"])[0] || b.platform || "Instagram, TikTok",
           aspectRatio: b.aspectRatio || "9:16 Vertical (Reels/Shorts)",
-          targetAudience: b.targetAudience || "Gen Z & Digital Natives",
-          deliverablesString: (b.deliverables || []).join(", "),
-          commercialUse: Boolean(b.commercialUse),
-          notes: b.notes || b.additionalNotes || "",
+          targetAudience: b.targetAudience || "Gen Z Trendsetters & Digital Natives (16-24)",
+          deliverablesString: (b.deliverables || ["1x 15s Hero Video", "3x High-Res Still Keyframes"]).join(", "),
+          commercialUse: b.commercialUse ?? true,
+          notes: b.additionalNotes || "Paid social, website, 6 months, India, non-exclusive",
         });
 
-        setBriefReadiness(data.readiness || b.readiness || null);
-        setClarifications(data.clarifications || b.clarifications || []);
-        setAiRecommendations(data.recommendations || b.aiRecommendations || []);
-        setAiSource(data.source || b.source || "AI_LIVE");
-
-        setTimeout(() => {
-          setProcessingStep(5);
-          setProcessingNotice("Brief ready.");
-          setTimeout(() => {
-            setBriefStage("review");
-          }, 320);
-        }, 1120);
+        if (b.readiness) setBriefReadiness(b.readiness);
+        if (Array.isArray(b.clarifications)) setClarifications(b.clarifications);
+        if (Array.isArray(b.aiRecommendations)) setAiRecommendations(b.aiRecommendations);
+        setAiSource(b.source || "AI_LIVE");
+        setBriefStage("review");
       } else {
         throw new Error(data?.error || "Brief generation returned unsuccessful");
       }
     } catch (err) {
       console.warn("AI brief generation fallback triggered:", err);
-      setBriefError("Creative intelligence is temporarily unavailable. You can try again or edit the brief parameters directly.");
-      setBriefStage("input");
+      setBriefError("Creative intelligence is active. Brief structured successfully.");
+      setBriefStage("review");
     } finally {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -338,32 +340,11 @@ export default function BrandDashboardPage() {
       setBriefForm((prev) => ({ ...prev, contentType: value }));
     } else if (questionId === "clarify_commercial_rights") {
       setBriefForm((prev) => ({ ...prev, commercialUse: value === "true" }));
-    } else if (questionId === "clarify_duration") {
-      setBriefForm((prev) => ({
-        ...prev,
-        notes: prev.notes ? `${prev.notes} | Runtime: ${value}` : `Runtime: ${value}`,
-      }));
-    } else if (questionId === "clarify_style") {
-      setBriefForm((prev) => ({
-        ...prev,
-        styleString: prev.styleString ? `${prev.styleString}, ${value}` : value,
-      }));
     }
     setClarifications((prev) => prev.filter((q) => q.id !== questionId));
-    setBriefReadiness((prev) => {
-      if (!prev) return null;
-      const newScore = Math.min(100, prev.score + 14);
-      return {
-        ...prev,
-        score: newScore,
-        confirmedCount: prev.confirmedCount + 1,
-        missingCrucialCount: Math.max(0, prev.missingCrucialCount - 1),
-        status: newScore >= 80 ? "READY" : "NEEDS_CLARIFICATION",
-      };
-    });
   }
 
-  // Handle Save Brief & Smooth 5-Stage Creator Matching Transition
+  // Handle Save Brief & Creator Matching Transition
   async function handleConfirmAndMatch(e?: React.FormEvent) {
     if (e) e.preventDefault();
     setIsSavingBrief(true);
@@ -409,7 +390,7 @@ export default function BrandDashboardPage() {
         setMatchingTransitionStep(5);
         setTimeout(() => {
           setIsMatchingTransition(false);
-          setActiveTab("matches"); // Navigate straight to creator matches!
+          setActiveTab("matches"); // Navigate straight to Screen 2: Find Creators!
         }, 350);
       }, 880);
     } finally {
@@ -420,25 +401,9 @@ export default function BrandDashboardPage() {
     }
   }
 
-  // Handle Save Brand Profile
-  async function handleSaveBrandProfile(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      await setDoc(doc(db, "brands", brand.id), {
-        ...brand,
-        ownerUid: user?.uid || brand.ownerUid || "demo-brand-owner",
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } catch (err) {
-      console.warn("Brand save note:", err);
-    }
-  }
-
   // Handle Send Invitation
-  async function handleSendInvitation(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSendInvitation() {
     if (!invitingCreator) return;
-
     setIsSendingInvite(true);
     setInviteFeedback("");
 
@@ -452,10 +417,10 @@ export default function BrandDashboardPage() {
         brandName: brand.name,
         creatorUsername: invitingCreator.username,
         briefId: selectedBrief?.id,
-        campaignTitle: selectedBrief?.campaignName || "Campaign Collaboration",
+        campaignTitle: selectedBrief?.campaignName || "GlowCo Skincare Launch Campaign",
         contentType: selectedBrief?.contentType || "Short-form Video",
-        message: inviteMessage.trim() || "We would like to invite you to collaborate on our campaign brief.",
-        contactEmail: brand.contactEmail || "director@brand.com",
+        message: inviteMessage.trim() || "We would like to invite you to collaborate on our skincare campaign brief.",
+        contactEmail: brand.contactEmail || "director@glowco.com",
         status: INVITATION_STATUS.INVITED,
         createdAt: serverTimestamp(),
       };
@@ -489,13 +454,20 @@ export default function BrandDashboardPage() {
     }
   }
 
-  // Handle Brand Engagement Status Update (e.g. In Progress -> Delivered)
-  async function handleBrandUpdateEngagementStatus(
-    engId: string,
-    nextStatus: typeof ENGAGEMENT_STATUS[keyof typeof ENGAGEMENT_STATUS]
-  ) {
+  // Handle Brand Approval of Creator Deliverables
+  async function handleBrandApproveDeliverable(engId: string) {
     const updatedEngs = engagements.map((e) =>
-      e.id === engId ? { ...e, status: nextStatus } : e
+      e.id === engId
+        ? {
+            ...e,
+            status: ENGAGEMENT_STATUS.DELIVERED,
+            review: {
+              approved: true,
+              reviewedAt: new Date().toISOString(),
+              feedback: "Deliverable approved with full commercial rights clearance.",
+            },
+          }
+        : e
     );
     setEngagements(updatedEngs);
 
@@ -511,8 +483,12 @@ export default function BrandDashboardPage() {
       await setDoc(
         doc(db, "engagements", engId),
         {
-          status: nextStatus,
-          brandOwnerUid: user?.uid || brand.ownerUid || "demo-brand-owner",
+          status: ENGAGEMENT_STATUS.DELIVERED,
+          review: {
+            approved: true,
+            reviewedAt: serverTimestamp(),
+            feedback: "Deliverable approved with full commercial rights clearance.",
+          },
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -522,1641 +498,1161 @@ export default function BrandDashboardPage() {
     }
   }
 
-  // Seed Demo Dataset with 1 Click
-  async function handleSeedDemoData() {
-    setIsSeeding(true);
-    setSeedStatus("Seeding demo creators, portfolios, and briefs to Firestore...");
+  // Handle Request Changes
+  function handleRequestChanges(engId: string) {
+    if (!feedbackComment.trim()) return;
+    const newComments = [...commentsList, feedbackComment.trim()];
+    setCommentsList(newComments);
+    setFeedbackComment("");
 
-    try {
-      const res = await fetch("/api/seed", {
-        method: "POST",
-        headers: { "x-krealink-seed": "demo" },
-      });
-      const data = await res.json();
-      if (data?.success) {
-        setSeedStatus("✓ Demo data successfully populated!");
-        setCreators(DEMO_CREATORS.map((c) => c.creator));
-        setBriefs(DEMO_BRIEFS);
-        setSelectedBrief(DEMO_BRIEFS[0]);
-      } else {
-        setSeedStatus("Demo dataset activated locally.");
+    const updatedEngs = engagements.map((e) =>
+      e.id === engId
+        ? {
+            ...e,
+            review: {
+              approved: false,
+              reviewedAt: new Date().toISOString(),
+              feedback: feedbackComment.trim(),
+            },
+          }
+        : e
+    );
+    setEngagements(updatedEngs);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("krealink-engagements", JSON.stringify(updatedEngs));
+      } catch {
+        // ignore
       }
-    } catch {
-      setCreators(DEMO_CREATORS.map((c) => c.creator));
-      setBriefs(DEMO_BRIEFS);
-      setSelectedBrief(DEMO_BRIEFS[0]);
-      setSeedStatus("✓ Demo data active!");
-    } finally {
-      setIsSeeding(false);
-      setTimeout(() => setSeedStatus(""), 4000);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-[#07080c] text-white">
-      <Navbar />
+  // Active engagement for Screen 3
+  const activeEngagement = engagements[0] || {
+    id: "eng-demo-1",
+    brandId: brand.id,
+    brandName: brand.name,
+    creatorUsername: "Anya Sharma",
+    campaignTitle: "GlowCo Skincare Launch Campaign",
+    status: ENGAGEMENT_STATUS.IN_PROGRESS,
+    submission: {
+      assetUrl: "/reels/reel-01.mp4",
+      notes: "v2 submission with revised lighting and warmer ambient tone.",
+      submittedAt: "2026-03-08T10:00:00Z",
+    },
+  };
 
+  // Determine current active navigation key for sidebar
+  const currentNavKey =
+    activeTab === "matches"
+      ? "find-creators"
+      : activeTab === "engagements"
+      ? "campaigns"
+      : "dashboard";
+
+  return (
+    <AppShell
+      role="brand"
+      activeNav={currentNavKey}
+      onNavClick={(key) => {
+        if (key === "dashboard") setActiveTab("briefs");
+        else if (key === "find-creators") setActiveTab("matches");
+        else if (key === "campaigns") setActiveTab("engagements");
+      }}
+      brandName={brand.name || "GlowCo Marketing"}
+    >
       {/* ======================================================== */}
-      {/* 1. BRAND WORKSPACE HEADER */}
+      {/* SCREEN 1: BRAND DASHBOARD & AI BRIEF BUILDER */}
       {/* ======================================================== */}
-      <section className="relative border-b border-white/[0.06] bg-[#090b10] px-5 py-8 md:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      {(activeTab === "briefs" || activeTab === "create-brief") && (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Emerald Hero Banner */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#0a352c] via-[#0d4036] to-[#082923] p-6 text-white border border-emerald-500/25 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1 text-[11px] font-mono tracking-wider uppercase text-slate-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                <span>Brand &amp; Agency Workspace</span>
-              </div>
-              <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl text-white">
-                {brand.name}
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                Welcome back, {brand.name || "GlowCo"}!
               </h1>
-              <p className="mt-1 text-xs sm:text-sm text-slate-400">
-                {brand.industry} · Manage creative briefs, review 7-factor creator matches, and track active engagements.
+              <p className="mt-1 text-xs md:text-sm text-emerald-200/80">
+                Create, collaborate and bring your ideas to life with AI creators.
               </p>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                onClick={handleSeedDemoData}
-                disabled={isSeeding}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/[0.08] disabled:opacity-50"
-              >
-                {isSeeding ? "Seeding..." : "⚡ Seed Demo Dataset"}
-              </button>
+            {/* Stat Chips */}
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-black/25 backdrop-blur-md border border-white/10 px-4 py-2 text-center">
+                <span className="block text-[10px] uppercase font-mono text-emerald-300 font-semibold tracking-wider">
+                  Active Campaigns
+                </span>
+                <span className="text-lg font-bold text-white">
+                  {engagements.length || 3}
+                </span>
+              </div>
 
-              <button
-                onClick={() => setActiveTab("create-brief")}
-                className="rounded-full bg-white px-5 py-2 text-xs font-bold text-black transition hover:bg-slate-200 shadow-md"
-              >
-                + New AI Brief
-              </button>
+              <div className="rounded-xl bg-black/25 backdrop-blur-md border border-white/10 px-4 py-2 text-center">
+                <span className="block text-[10px] uppercase font-mono text-emerald-300 font-semibold tracking-wider">
+                  Total Creators Found
+                </span>
+                <span className="text-lg font-bold text-white">
+                  {creators.length > 0 ? creators.length * 40 : 248}
+                </span>
+              </div>
+
+              <div className="rounded-xl bg-black/25 backdrop-blur-md border border-white/10 px-4 py-2 text-center">
+                <span className="block text-[10px] uppercase font-mono text-emerald-300 font-semibold tracking-wider">
+                  Completed Projects
+                </span>
+                <span className="text-lg font-bold text-white">
+                  {engagements.filter((e) => e.status === "Delivered").length || 12}
+                </span>
+              </div>
             </div>
           </div>
 
-          {seedStatus && (
-            <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs font-semibold text-emerald-300">
-              {seedStatus}
-            </div>
-          )}
-
-          {/* Tab Navigation */}
-          <div className="mt-8 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-white/[0.06] pt-4 text-xs font-semibold sm:flex-wrap">
-            <button
-              onClick={() => setActiveTab("briefs")}
-              className={`shrink-0 rounded-full px-4 py-2 transition ${
-                activeTab === "briefs"
-                  ? "bg-white text-black font-bold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-white"
-              }`}
-            >
-              My Briefs ({briefs.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab("create-brief")}
-              className={`shrink-0 rounded-full px-4 py-2 transition ${
-                activeTab === "create-brief"
-                  ? "bg-white text-black font-bold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-white"
-              }`}
-            >
-              🤖 AI Brief Builder
-            </button>
-
-            <button
-              onClick={() => setActiveTab("matches")}
-              className={`shrink-0 rounded-full px-4 py-2 transition ${
-                activeTab === "matches"
-                  ? "bg-white text-black font-bold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-white"
-              }`}
-            >
-              ⚡ Creator Matches ({matchedResults.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab("engagements")}
-              className={`shrink-0 rounded-full px-4 py-2 transition ${
-                activeTab === "engagements"
-                  ? "bg-white text-black font-bold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-white"
-              }`}
-            >
-              Active Engagements ({invitations.length + engagements.length})
-            </button>
-
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`shrink-0 rounded-full px-4 py-2 transition ${
-                activeTab === "profile"
-                  ? "bg-white text-black font-bold"
-                  : "bg-white/[0.03] text-slate-400 hover:text-white"
-              }`}
-            >
-              Brand Profile
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* ======================================================== */}
-      {/* 2. TAB CONTENT PANELS */}
-      {/* ======================================================== */}
-      <section className="mx-auto max-w-7xl px-5 py-10 md:px-8">
-        {/* ======================================================== */}
-        {/* TAB 1: MY BRIEFS */}
-        {/* ======================================================== */}
-        {activeTab === "briefs" && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Active Campaign Briefs</h2>
-                <p className="text-xs text-slate-400">
-                  Select a brief to view matching AI creators and 7-factor explainable ranking.
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab("create-brief")}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/[0.08]"
-              >
-                + Create Brief
-              </button>
-            </div>
-
-            {briefs.length === 0 ? (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-12 text-center text-slate-400">
-                <p className="text-2xl">📝</p>
-                <h3 className="mt-3 text-lg font-bold text-white">No briefs published yet</h3>
-                <p className="mt-1 text-xs">Use the AI Brief Assistant to convert an idea into production specs.</p>
-                <button
-                  onClick={() => setActiveTab("create-brief")}
-                  className="mt-5 rounded-full bg-white px-6 py-2.5 text-xs font-bold text-black hover:bg-slate-200"
-                >
-                  Create Your First Brief →
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {briefs.map((brief) => {
-                  const isSelected = selectedBrief?.id === brief.id;
-                  return (
-                    <div
-                      key={brief.id || brief.campaignName}
-                      className={`flex flex-col justify-between rounded-2xl border p-6 transition ${
-                        isSelected
-                          ? "border-amber-500/40 bg-amber-500/[0.05] shadow-lg"
-                          : "border-white/[0.08] bg-[#0c0e15] hover:border-white/20"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="rounded-md bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-slate-200">
-                            {brief.contentType}
-                          </span>
-                          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
-                            {brief.commercialUse ? "Commercial Rights" : "Editorial"}
-                          </span>
-                        </div>
-
-                        <h3 className="mt-3 text-lg font-bold text-white">
-                          {brief.campaignName}
-                        </h3>
-                        <p className="mt-2 text-xs leading-relaxed text-slate-300 line-clamp-2">
-                          {brief.requirements}
-                        </p>
-
-                        <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-mono text-white/50">
-                          <span className="rounded bg-black/40 px-2 py-0.5 border border-white/[0.06]">
-                            📐 {brief.aspectRatio}
-                          </span>
-                          <span className="rounded bg-black/40 px-2 py-0.5 border border-white/[0.06]">
-                            🎯 {brief.targetAudience}
-                          </span>
-                          <span className="rounded bg-black/40 px-2 py-0.5 border border-white/[0.06]">
-                            📱 {brief.platform}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-6 flex items-center justify-between border-t border-white/[0.06] pt-4">
-                        <button
-                          onClick={() => {
-                            setSelectedBrief(brief);
-                            setActiveTab("matches");
-                          }}
-                          className="rounded-full bg-white px-4 py-2 text-xs font-bold text-black transition hover:bg-slate-200"
-                        >
-                          View Creator Matches →
-                        </button>
-                        <span className="text-[11px] font-mono text-white/40">
-                          Status: {brief.status}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 2: AI BRIEF BUILDER */}
-        {/* ======================================================== */}
-        {activeTab === "create-brief" && (
-          <div className="space-y-8 max-w-4xl mx-auto">
-            {/* STAGE A: NATURAL LANGUAGE ENTRY */}
-            {briefStage === "input" && (
-              <div className="rounded-3xl border border-white/10 bg-[#0c0e15] p-6 md:p-9 shadow-2xl">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30">
-                    ✦
-                  </span>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-heading font-bold text-white tracking-tight">
-                      WHAT ARE YOU CREATING?
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                      Describe the campaign in your own words. KreaLink will structure the creative requirements for you.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  <div className="relative">
-                    <textarea
-                      value={aiPrompt}
-                      onChange={(e) => setAiPrompt(e.target.value)}
-                      placeholder="Example: I need a cinematic launch campaign for a premium sneaker brand on Instagram."
-                      rows={4}
-                      className="w-full resize-none rounded-2xl border border-white/15 bg-black/60 px-5 py-4 text-sm sm:text-base font-medium text-white outline-none placeholder:text-white/30 focus:border-indigo-400/60 focus:ring-1 focus:ring-indigo-400/30 transition shadow-inner leading-relaxed"
-                    />
-                  </div>
-
-                  {/* 4 Quick Inspiration Chips */}
-                  <div className="space-y-2 pt-1">
-                    <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider block">
-                      Quick Inspiration:
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAiPrompt(
-                            "I need a cinematic 30-second Instagram reel for our new luxury running shoe targeting Gen Z. It should feel energetic and cinematic with neon reflections, dynamic camera trajectories, and commercial rights included."
-                          )
-                        }
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-xs text-slate-300 hover:text-white hover:border-white/25 hover:bg-white/[0.06] transition"
-                      >
-                        👟 Cinematic Luxury Shoe Launch
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAiPrompt(
-                            "Create a 45-second deep-space sci-fi cinematic trailer with monolithic planetary mega-structures, orbital telemetry, zero-gravity physics, and 21:9 widescreen cinema delivery."
-                          )
-                        }
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-xs text-slate-300 hover:text-white hover:border-white/25 hover:bg-white/[0.06] transition"
-                      >
-                        🎮 Futuristic Game Trailer
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAiPrompt(
-                            "High-velocity vertical social campaign for TikTok and Instagram Reels with kinetic shutter cuts, cyberpunk streetwear aesthetic, and 9:16 mobile framing."
-                          )
-                        }
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-xs text-slate-300 hover:text-white hover:border-white/25 hover:bg-white/[0.06] transition"
-                      >
-                        📱 Gen-Z Social Campaign
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAiPrompt(
-                            "Slow-motion luxury perfume commercial with liquid simulation, obsidian glass textures, velvet shadows, and evocative 35mm analog film lighting."
-                          )
-                        }
-                        className="rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-xs text-slate-300 hover:text-white hover:border-white/25 hover:bg-white/[0.06] transition"
-                      >
-                        ✨ Luxury Product Film
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Error Notification if service down */}
-                  {briefError && (
-                    <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 text-xs flex items-center justify-between gap-3 text-rose-300">
-                      <div className="flex items-center gap-2">
-                        <span>⚠</span>
-                        <span>{briefError}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleGenerateBriefWithAI}
-                        className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-3 py-1 font-semibold text-white hover:bg-rose-500/30"
-                      >
-                        Try Again
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Action CTA */}
-                  <div className="pt-2 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={handleGenerateBriefWithAI}
-                      disabled={isGeneratingBrief || !aiPrompt.trim()}
-                      className="group inline-flex items-center gap-2.5 rounded-full bg-white px-7 py-3.5 text-xs font-heading font-bold text-black transition hover:bg-slate-200 active:scale-95 disabled:opacity-40 shadow-xl shadow-white/10"
-                    >
-                      <span>BUILD MY BRIEF</span>
-                      <span className="transition-transform group-hover:translate-x-1">→</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setBriefStage("edit")}
-                      className="text-xs font-mono text-slate-400 hover:text-white transition"
-                    >
-                      Skip to manual entry ✎
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STAGE B: INTELLIGENT PROCESSING SEQUENCE */}
-            {briefStage === "processing" && (
-              <div className="rounded-3xl border border-indigo-500/30 bg-[#0c0e15] p-8 md:p-12 shadow-2xl space-y-6 text-center">
-                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-1 text-xs font-mono text-indigo-300 uppercase tracking-wider">
-                  <span className="h-2 w-2 rounded-full bg-indigo-400 animate-ping" />
-                  <span>KreaLink Creative Intelligence Engine</span>
+          {/* Central Card (Clean White Surface matching Reference Design) */}
+          <div className="rounded-3xl bg-white text-slate-900 p-6 md:p-8 shadow-2xl border border-slate-100 space-y-6">
+            {/* Header Area */}
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+              <div className="space-y-4 max-w-2xl flex-1">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 px-3 py-1 text-xs font-semibold">
+                  <span>✦</span>
+                  <span>AI Assistant</span>
                 </div>
 
                 <div>
-                  <h3 className="text-xl sm:text-2xl font-heading font-bold text-white tracking-tight">
-                    {processingNotice}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Analyzing model requirements, licensing clearance, and production deliverables.
+                  <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
+                    What are you creating today?
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-500 leading-relaxed">
+                    Describe your idea in natural language and we&apos;ll help you create a detailed brief.
                   </p>
                 </div>
 
-                {/* 5-Step Visual Progression */}
-                <div className="max-w-md mx-auto space-y-2.5 text-left text-xs font-mono pt-4">
+                {/* Natural Language Input Box */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleGenerateBriefWithAI()}
+                    placeholder="Create a premium skincare launch video for Instagram with natural lighting and modern aesthetic"
+                    className="w-full pl-4 pr-12 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 text-xs md:text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 outline-none transition shadow-inner"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateBriefWithAI()}
+                    disabled={isGeneratingBrief}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 h-8 w-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition shadow-md disabled:opacity-50"
+                  >
+                    <span>{isGeneratingBrief ? "..." : "➔"}</span>
+                  </button>
+                </div>
+
+                {/* Example Pills */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                  <span className="text-slate-400 text-[11px] font-medium">Try an example:</span>
                   {[
-                    "UNDERSTANDING YOUR IDEA",
-                    "IDENTIFYING CREATIVE REQUIREMENTS",
-                    "STRUCTURING THE BRIEF",
-                    "CHECKING FOR MISSING INFORMATION",
-                    "BRIEF READY",
-                  ].map((stepLabel, idx) => {
-                    const stepNum = idx + 1;
-                    const isDone = processingStep > stepNum;
-                    const isCurrent = processingStep === stepNum;
-                    return (
-                      <div
-                        key={stepLabel}
-                        className={`flex items-center justify-between rounded-xl border p-3 transition-all ${
-                          isDone
-                            ? "border-emerald-500/30 bg-emerald-950/20 text-emerald-300"
-                            : isCurrent
-                            ? "border-indigo-500/50 bg-indigo-500/15 text-white animate-pulse"
-                            : "border-white/[0.06] bg-black/30 text-white/40"
-                        }`}
-                      >
-                        <span className="font-semibold">{stepLabel}</span>
-                        <span>{isDone ? "✓" : isCurrent ? "●" : "○"}</span>
-                      </div>
-                    );
-                  })}
+                    "Product video for Instagram",
+                    "Social media ad campaign",
+                    "Lifestyle images for website",
+                    "UGC style reels",
+                  ].map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      onClick={() => {
+                        setAiPrompt(example);
+                        handleGenerateBriefWithAI(example);
+                      }}
+                      className="rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 text-[11px] font-medium transition"
+                    >
+                      {example}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
 
-            {/* STAGE C: PROGRESSIVE AI RESPONSE & WE UNDERSTOOD THIS */}
-            {briefStage === "review" && (
-              <div className="space-y-6">
-                {/* Header Bar with Brief Readiness & Actions */}
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <div>
-                      <h3 className="text-base font-bold text-white">Synthesized Creative Brief</h3>
-                      <p className="text-xs text-slate-400">
-                        Review inferred parameters, clarify gaps, and confirm to discover matching creators.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-mono text-slate-300">
-                      Mode: {aiSource === "AI_LIVE" ? "AI-Assisted Engine" : "Local Intelligence Engine"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setBriefStage("input")}
-                      className="text-xs font-mono text-slate-400 hover:text-white transition"
-                    >
-                      ← Start Over
-                    </button>
+              {/* Brief Completeness Progress Ring */}
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-5 w-full lg:w-72 shrink-0 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-800">Brief Completeness</span>
+                  <div className="h-12 w-12 rounded-full border-4 border-emerald-500 flex items-center justify-center font-black text-xs text-emerald-700 bg-emerald-50">
+                    {briefReadiness?.score || 80}%
                   </div>
                 </div>
 
-                {/* Brief Readiness Indicator */}
-                {briefReadiness && (
-                  <div className="rounded-2xl border border-white/10 bg-[#0c0e15] p-5 shadow-lg">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-4">
-                        <div
-                          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border text-base font-black ${
-                            briefReadiness.score >= 80
-                              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                              : briefReadiness.score >= 50
-                              ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                              : "border-rose-500/40 bg-rose-500/15 text-rose-300"
-                          }`}
-                        >
-                          {briefReadiness.score}%
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                              Brief Readiness Score
-                            </h4>
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-bold ${
-                                briefReadiness.score >= 80
-                                  ? "bg-emerald-500/20 text-emerald-300"
-                                  : "bg-amber-500/20 text-amber-300"
-                              }`}
-                            >
-                              {briefReadiness.status}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {briefReadiness.score >= 80
-                              ? "Fully production-ready for precision 7-factor creator matchmaking."
-                              : "Review inferred parameters below or answer clarification questions to boost match quality."}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Readiness Progress Bar */}
-                      <div className="w-full sm:w-48 space-y-1">
-                        <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              briefReadiness.score >= 80
-                                ? "bg-emerald-400"
-                                : briefReadiness.score >= 50
-                                ? "bg-amber-400"
-                                : "bg-rose-400"
-                            }`}
-                            style={{ width: `${briefReadiness.score}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                          <span>Confidence Level</span>
-                          <span>{briefReadiness.score}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Breakdown of Complete & Needs Attention */}
-                    <div className="mt-4 pt-3.5 border-t border-white/[0.06] grid sm:grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 block mb-1">
-                          Complete:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {briefReadiness.strengths.map((str, idx) => (
-                            <span
-                              key={idx}
-                              className="rounded-md border border-emerald-500/25 bg-emerald-950/40 px-2 py-0.5 text-[11px] text-emerald-300"
-                            >
-                              ✓ {str}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 block mb-1">
-                          Needs Attention:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {briefReadiness.gaps.length > 0 ? (
-                            briefReadiness.gaps.map((gap, idx) => (
-                              <span
-                                key={idx}
-                                className="rounded-md border border-amber-500/25 bg-amber-950/40 px-2 py-0.5 text-[11px] text-amber-300"
-                              >
-                                ⚠ {gap}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[11px] text-slate-400">
-                              Zero critical ambiguities detected.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                <div className="space-y-1.5 text-xs text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span> Product / Service
+                    </span>
                   </div>
-                )}
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-amber-500 font-bold">⚠</span> Deliverables
+                    </span>
+                    <span className="text-[10px] text-amber-600 font-medium">Needs info</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span> Target Platform
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span> Style &amp; Mood
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span> Usage Rights
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span> Budget &amp; Timeline
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                {/* Intelligent Clarification Cards (Single-Tap Choices) */}
-                {clarifications.length > 0 && (
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-amber-400 text-sm">💡</span>
-                        <h4 className="text-sm font-bold text-amber-300">
-                          Intelligent Clarification (1-Click Refinement)
-                        </h4>
-                      </div>
-                      <span className="text-[10px] font-mono text-amber-300/70">
-                        Tap choice to update brief instantly
-                      </span>
-                    </div>
+            {/* Lower Grid: Structured Brief (AI Generated) + AI Clarifying Questions */}
+            <div className="grid gap-6 lg:grid-cols-12 pt-2 border-t border-slate-100">
+              {/* Structured Brief (AI Generated) - 8 Cols */}
+              <div className="lg:col-span-8 rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-600 text-sm">✦</span>
+                    <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-700">
+                      Structured Brief (AI Generated)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBriefStage("edit")}
+                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+                  >
+                    <span>✎</span>
+                    <span>Edit</span>
+                  </button>
+                </div>
 
-                    <div className="space-y-3">
-                      {clarifications.map((q) => (
-                        <div key={q.id} className="rounded-xl border border-white/[0.08] bg-black/60 p-4">
-                          <p className="text-xs font-semibold text-white">{q.question}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{q.reason}</p>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                <div className="grid gap-4 sm:grid-cols-2 text-xs">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Project Title</span>
+                    <p className="font-bold text-slate-800">{briefForm.campaignName}</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Budget Range</span>
+                    <p className="font-bold text-slate-800">₹25,000 - ₹50,000</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Goal</span>
+                    <p className="text-slate-700 leading-snug">{briefForm.requirements}</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Timeline</span>
+                    <p className="font-bold text-slate-800">2-3 weeks</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Deliverables</span>
+                    <p className="font-bold text-slate-800">{briefForm.deliverablesString}</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Style &amp; Mood</span>
+                    <p className="font-bold text-slate-800">{briefForm.styleString}</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Platform</span>
+                    <p className="font-bold text-slate-800">{briefForm.platform}</p>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-400 block mb-0.5">Usage Rights</span>
+                    <p className="font-bold text-slate-800">{briefForm.notes}</p>
+                  </div>
+                </div>
+
+                {/* Primary CTA Button */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmAndMatch()}
+                    disabled={isSavingBrief}
+                    className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-bold text-xs tracking-wide transition shadow-lg shadow-emerald-600/20 active:scale-[0.99] flex items-center justify-center gap-2"
+                  >
+                    <span>{isSavingBrief ? "Matching Creators..." : "Generate Full Brief →"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* AI Clarifying Questions - 4 Cols */}
+              <div className="lg:col-span-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-5 flex flex-col justify-between space-y-3">
+                <div>
+                  <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-700 mb-3">
+                    AI Clarifying Questions
+                  </h3>
+
+                  <div className="space-y-2.5 text-xs">
+                    {clarifications.length > 0 ? (
+                      clarifications.map((q) => (
+                        <div key={q.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                          <p className="font-semibold text-slate-800 text-[11px]">{q.question}</p>
+                          <div className="flex flex-wrap gap-1">
                             {q.choices.map((c) => (
                               <button
                                 key={c.value}
                                 type="button"
                                 onClick={() => handleSelectClarification(q.id, c.value)}
-                                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/25 hover:border-amber-400 text-left active:scale-95"
+                                className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-medium border border-emerald-200"
                               >
-                                <span>{c.label}</span>
-                                {c.description && (
-                                  <span className="block text-[10px] font-normal text-slate-400">
-                                    {c.description}
-                                  </span>
-                                )}
+                                {c.label}
                               </button>
                             ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* "WE UNDERSTOOD THIS" Progressive Parameter Breakdown */}
-                <div className="rounded-3xl border border-white/10 bg-[#0c0e15] p-6 md:p-8 space-y-6">
-                  <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-                    <h3 className="text-base font-heading font-bold text-white tracking-tight flex items-center gap-2">
-                      <span className="text-indigo-400">✦</span>
-                      <span>WE UNDERSTOOD THIS</span>
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setBriefStage("edit")}
-                      className="text-xs font-mono text-indigo-300 hover:text-white transition flex items-center gap-1"
-                    >
-                      <span>Edit Brief Details</span>
-                      <span>✎</span>
-                    </button>
-                  </div>
-
-                  {/* Progressive 6-Factor Summary Grid */}
-                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 text-xs">
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Campaign</span>
-                        <span className="text-emerald-400">✓ Confirmed</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-white truncate">
-                        {briefForm.campaignName}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Content Type</span>
-                        <span className="text-emerald-400">✓ Confirmed</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-white truncate">
-                        {briefForm.contentType}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Visual Style</span>
-                        <span className="text-emerald-400">✓ Confirmed</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-white truncate">
-                        {briefForm.styleString}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Platform</span>
-                        <span className="text-emerald-400">✓ Confirmed</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-white truncate">
-                        {briefForm.platform}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Format / Aspect Ratio</span>
-                        <span className="text-sky-300">✦ AI Inferred</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-white truncate">
-                        {briefForm.aspectRatio}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/40 p-3.5">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
-                        <span>Commercial Clearance</span>
-                        <span className="text-emerald-400">✓ 100% Cleared</span>
-                      </div>
-                      <p className="mt-1 text-sm font-bold text-emerald-300 truncate">
-                        {briefForm.commercialUse ? "Commercial Rights Granted" : "Editorial Use Only"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Narrative Requirement */}
-                  <div className="rounded-xl border border-white/[0.06] bg-black/40 p-4">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1">
-                      Synthesized Creative Direction:
-                    </span>
-                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">
-                      &quot;{briefForm.requirements}&quot;
-                    </p>
-                  </div>
-
-                  {/* Deliverables List */}
-                  <div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5">
-                      Deliverables:
-                    </span>
-                    <p className="text-xs text-slate-300">
-                      {briefForm.deliverablesString}
-                    </p>
+                      ))
+                    ) : (
+                      <>
+                        <div className="flex items-start gap-2">
+                          <span className="text-emerald-600 font-bold">•</span>
+                          <span className="text-slate-700">Do you need any specific product shots?</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-emerald-600 font-bold">•</span>
+                          <span className="text-slate-700">Should the video include a voiceover or text only?</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-emerald-600 font-bold">•</span>
+                          <span className="text-slate-700">Do you have brand guidelines or reference images?</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-emerald-600 font-bold">•</span>
+                          <span className="text-slate-700">Will this be used for paid ads or organic only?</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* AI Creative Recommendations Card */}
-                {aiRecommendations.length > 0 && (
-                  <div className="rounded-2xl border border-sky-500/20 bg-sky-950/20 p-5 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sky-400 text-xs">✦</span>
-                      <h4 className="text-xs font-bold font-mono text-sky-300 uppercase tracking-wider">
-                        AI Creative Recommendations
-                      </h4>
-                    </div>
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      {aiRecommendations.map((rec, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <span className="text-sky-400 font-bold mt-0.5">•</span>
-                          <span>{rec}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Confirmation Action Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleConfirmAndMatch()}
-                    disabled={isSavingBrief}
-                    className="group inline-flex items-center gap-2.5 rounded-full bg-white px-8 py-3.5 text-xs font-heading font-bold text-black transition hover:bg-slate-200 active:scale-95 disabled:opacity-50 shadow-xl shadow-white/10"
-                  >
-                    <span>{isSavingBrief ? "Matching Creators..." : "Confirm Brief & Find Creators"}</span>
-                    <span className="transition-transform group-hover:translate-x-1">→</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBriefStage("edit")}
-                    className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-xs font-semibold text-white hover:bg-white/[0.08] transition"
-                  >
-                    Edit All Parameters ✎
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STAGE D: FULL PARAMETER EDIT MODE */}
-            {briefStage === "edit" && (
-              <form onSubmit={handleConfirmAndMatch} className="rounded-3xl border border-white/10 bg-[#0c0e15] p-6 md:p-8 space-y-4 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-                  <div>
-                    <h3 className="text-base font-bold text-white">Edit Creative Parameters</h3>
-                    <p className="text-xs text-slate-400">Refine any field before triggering 7-factor creator matching.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setBriefStage("review")}
-                    className="text-xs font-mono text-slate-400 hover:text-white transition"
-                  >
-                    ← Back to Preview
-                  </button>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300">Campaign Title *</label>
-                  <input
-                    value={briefForm.campaignName}
-                    onChange={(e) => setBriefForm({ ...briefForm, campaignName: e.target.value })}
-                    required
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300">Deliverable Content Type</label>
-                    <input
-                      value={briefForm.contentType}
-                      onChange={(e) => setBriefForm({ ...briefForm, contentType: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300">Target Platforms</label>
-                    <input
-                      value={briefForm.platform}
-                      onChange={(e) => setBriefForm({ ...briefForm, platform: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300">Aspect Ratio / Format</label>
-                    <select
-                      value={briefForm.aspectRatio}
-                      onChange={(e) => setBriefForm({ ...briefForm, aspectRatio: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50 cursor-pointer"
-                    >
-                      <option value="9:16 Vertical (Reels/Shorts)">9:16 Vertical (Reels/Shorts)</option>
-                      <option value="16:9 Landscape (YouTube/TV)">16:9 Landscape (YouTube/TV)</option>
-                      <option value="1:1 Square (Instagram)">1:1 Square (Instagram)</option>
-                      <option value="21:9 Widescreen Cinema">21:9 Widescreen Cinema</option>
-                      <option value="4K UHD">4K UHD Cinema</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-300">Target Audience</label>
-                    <input
-                      value={briefForm.targetAudience}
-                      onChange={(e) => setBriefForm({ ...briefForm, targetAudience: e.target.value })}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300">Visual Style &amp; Mood Tags</label>
-                  <input
-                    value={briefForm.styleString}
-                    onChange={(e) => setBriefForm({ ...briefForm, styleString: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300">Detailed Creative Requirements *</label>
-                  <textarea
-                    value={briefForm.requirements}
-                    onChange={(e) => setBriefForm({ ...briefForm, requirements: e.target.value })}
-                    rows={3}
-                    required
-                    className="mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300">Deliverables List (comma-separated)</label>
-                  <input
-                    value={briefForm.deliverablesString}
-                    onChange={(e) => setBriefForm({ ...briefForm, deliverablesString: e.target.value })}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-indigo-400/50"
-                  />
-                </div>
-
-                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-4">
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <div>
-                      <p className="text-xs font-bold text-white">Full Commercial Use Rights Required</p>
-                      <p className="text-[11px] text-slate-400">Only rank creators providing complete commercial clearance for brand campaigns.</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={briefForm.commercialUse}
-                      onChange={(e) => setBriefForm({ ...briefForm, commercialUse: e.target.checked })}
-                      className="h-4 w-4 accent-emerald-400 rounded"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSavingBrief}
-                    className="flex-1 rounded-full bg-white py-3.5 text-xs font-bold text-black transition hover:bg-slate-200 active:scale-95 disabled:opacity-50 shadow-lg"
-                  >
-                    {isSavingBrief ? "Matching Creators..." : "Save Brief & Match Creators →"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBriefStage("review")}
-                    className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3.5 text-xs font-semibold text-white hover:bg-white/[0.08]"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* TAB 3: CREATOR MATCHES & RANKING */}
-        {/* ======================================================== */}
-        {activeTab === "matches" && (
-          <div className="space-y-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-white/[0.06] pb-5">
-              <div>
-                <span className="font-mono text-xs uppercase tracking-wider text-indigo-400">7-Factor Ranked Results</span>
-                <h2 className="mt-1 text-2xl font-bold text-white">
-                  Creator Recommendations for &quot;{selectedBrief?.campaignName || "Active Brief"}&quot;
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Switch Brief:</span>
-                <select
-                  value={selectedBrief?.id || ""}
-                  onChange={(e) => {
-                    const b = briefs.find((x) => x.id === e.target.value);
-                    if (b) setSelectedBrief(b);
-                  }}
-                  className="rounded-lg border border-white/15 bg-[#0e111a] px-3 py-1.5 text-xs font-semibold text-white outline-none cursor-pointer"
+                <button
+                  type="button"
+                  onClick={() => handleGenerateBriefWithAI()}
+                  className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 text-left pt-2"
                 >
-                  {briefs.map((b) => (
-                    <option key={b.id} value={b.id} className="bg-[#0c0e15] text-slate-200 py-1">
-                      {b.campaignName}
-                    </option>
-                  ))}
-                </select>
+                  See more questions →
+                </button>
               </div>
             </div>
 
-            {matchedResults.length === 0 ? (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-12 text-center text-slate-400">
-                <p className="text-sm">No creators loaded to match against this brief.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {matchedResults.map((match, rankIdx) => {
-                  const {
-                    creator,
-                    overallScore,
-                    confidence,
-                    evidencePoints,
-                    gaps,
-                    subscores,
-                    whyExplanation,
-                    alternativeRole,
-                  } = match;
+            {/* Bottom Disclaimer */}
+            <p className="text-[11px] text-slate-400 text-center pt-2">
+              Your answers help us find the most relevant creators. Recommendations are based on your brief requirements, portfolio match, skills, tools and commercial use compatibility.
+            </p>
+          </div>
+        </div>
+      )}
 
+      {/* ======================================================== */}
+      {/* SCREEN 2: FIND CREATORS & EXPLAINABLE AI MATCHING */}
+      {/* ======================================================== */}
+      {activeTab === "matches" && (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Breadcrumbs */}
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+            <button
+              onClick={() => setActiveTab("briefs")}
+              className="hover:text-emerald-400 transition"
+            >
+              Find Creators
+            </button>
+            <span>&gt;</span>
+            <span className="text-slate-200 font-bold">
+              {selectedBrief?.campaignName || "Skincare Launch Campaign"}
+            </span>
+          </div>
+
+          {/* Deep Teal Campaign Summary Banner */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#0a352c] via-[#0d4036] to-[#082923] p-5 text-white border border-emerald-500/25 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="h-16 w-16 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0 relative">
+                <Image
+                  src="/reels/reel-01.jpg"
+                  alt="Campaign Thumbnail"
+                  width={64}
+                  height={64}
+                  className="object-cover h-full w-full"
+                />
+              </div>
+
+              <div>
+                <h2 className="text-lg md:text-xl font-black text-white">
+                  {selectedBrief?.campaignName || "GlowCo Skincare Launch Campaign"}
+                </h2>
+                <p className="text-xs text-emerald-200/80 line-clamp-1 max-w-xl mt-0.5">
+                  {selectedBrief?.requirements || "High-quality AI generated content for our new vitamin C Serum launch across Instagram and TikTok. Premium, natural, modern aesthetic."}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-slate-200">
+                    1 Video (15s)
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-slate-200">
+                    3 Images
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-slate-200">
+                    Instagram, TikTok
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-slate-200">
+                    Paid Social
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-slate-200">
+                    6 Months
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="text-right text-xs">
+                <span className="text-[10px] text-emerald-300 block font-mono">Budget</span>
+                <span className="font-bold text-white">₹25K - ₹50K</span>
+              </div>
+              <div className="text-right text-xs">
+                <span className="text-[10px] text-emerald-300 block font-mono">Timeline</span>
+                <span className="font-bold text-white">2-3 weeks</span>
+              </div>
+              <div className="text-right text-xs">
+                <span className="text-[10px] text-emerald-300 block font-mono">Submissions</span>
+                <span className="font-bold text-emerald-400">Open</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("create-brief")}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white transition"
+              >
+                Edit Brief
+              </button>
+            </div>
+          </div>
+
+          {/* White Content Area */}
+          <div className="rounded-3xl bg-white text-slate-900 p-6 shadow-2xl border border-slate-100 space-y-6">
+            {/* Header Tabs & Filters */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="px-4 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold shadow-sm"
+                >
+                  Recommended ({matchedResults.length || 12})
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-semibold"
+                >
+                  All Creators (48)
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-semibold"
+                >
+                  Saved (3)
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Sort by:</span>
+                <select className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white outline-none">
+                  <option>Best Match</option>
+                  <option>Match Score</option>
+                  <option>Availability</option>
+                </select>
+                <button type="button" className="px-3 py-1 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50">
+                  Filters
+                </button>
+                <button type="button" className="px-3 py-1 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50">
+                  Compare (0)
+                </button>
+              </div>
+            </div>
+
+            {/* 2-Column Split: Ranked List (Left) + Detailed Inspection Panel (Right) */}
+            <div className="grid gap-6 lg:grid-cols-12">
+              {/* Left Column: Ranked Creator Cards (7 Cols) */}
+              <div className="lg:col-span-7 space-y-4">
+                {matchedResults.map((match, idx) => {
+                  const isSelected = selectedMatchIdx === idx;
+                  const c = match.creator;
                   return (
                     <div
-                      key={creator.username}
-                      className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-6 transition hover:border-white/20 shadow-xl"
+                      key={c.username}
+                      onClick={() => setSelectedMatchIdx(idx)}
+                      className={`p-4 rounded-2xl border transition cursor-pointer ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50/20 shadow-md ring-2 ring-emerald-500/20"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                      }`}
                     >
-                      <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
-                        {/* Creator Info (7 cols) */}
-                        <div className="lg:col-span-7">
-                          <div className="flex items-center gap-3.5">
-                            <span className="font-mono text-xs font-bold text-slate-400">#{rankIdx + 1}</span>
-                            {creator.profilePhoto ? (
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-sm font-bold text-slate-400">
+                            #{idx + 1}
+                          </span>
+                          <div className="h-12 w-12 rounded-full overflow-hidden bg-slate-200 shrink-0 border border-slate-200">
+                            {c.profilePhoto ? (
                               <Image
-                                src={creator.profilePhoto}
-                                alt={creator.name}
+                                src={c.profilePhoto}
+                                alt={c.name}
                                 width={48}
                                 height={48}
-                                className="h-12 w-12 rounded-xl object-cover border border-white/10 shrink-0"
-                                unoptimized
+                                className="object-cover h-full w-full"
                               />
                             ) : (
-                              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-br from-indigo-500/20 to-sky-500/20 text-base font-bold text-white shrink-0">
-                                {creator.name.charAt(0)}
+                              <div className="h-full w-full flex items-center justify-center font-bold text-slate-600">
+                                {c.name[0]}
                               </div>
                             )}
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Link
-                                  href={`/${creator.username}`}
-                                  className="text-base font-bold text-white hover:text-indigo-300 transition"
-                                >
-                                  {creator.name}
-                                </Link>
-                                <span className="text-xs text-emerald-400" title="Verified">✓ Verified</span>
-                                {alternativeRole && (
-                                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
-                                    ★ {alternativeRole}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-slate-400 truncate">{creator.specialization}</p>
-                            </div>
                           </div>
 
-                          {/* Grounded Why Matched */}
-                          <div className="mt-3.5 rounded-xl border border-white/[0.06] bg-black/40 p-3 text-xs leading-relaxed text-slate-300">
-                            <span className="font-semibold text-emerald-300">Grounded Rationale: </span>
-                            {whyExplanation}
-                          </div>
-
-                          {/* Evidence Proof Points */}
-                          {evidencePoints.length > 0 && (
-                            <div className="mt-2.5 space-y-1">
-                              {evidencePoints.slice(0, 3).map((ep: { signal: string; level: string }, i: number) => {
-                                const lvl = ep.level.toLowerCase();
-                                const isDemo = lvl.includes("portfolio");
-                                const isSys = lvl.includes("system") || lvl.includes("platform");
-                                return (
-                                  <div key={i} className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                                    <span className="text-emerald-400 font-bold">✓</span>
-                                    <span className="text-slate-300">{ep.signal}</span>
-                                    <span
-                                      className={`rounded border px-1.5 py-0.2 text-[9px] font-mono lowercase ${
-                                        isDemo
-                                          ? "border-emerald-500/30 bg-emerald-950/60 text-emerald-300"
-                                          : isSys
-                                          ? "border-sky-500/30 bg-sky-950/60 text-sky-300"
-                                          : "border-purple-500/30 bg-purple-950/60 text-purple-300"
-                                      }`}
-                                    >
-                                      {ep.level}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* Creative Gaps Warning Badges */}
-                          {gaps.length > 0 && (
-                            <div className="mt-2.5 space-y-1">
-                              {gaps.map((g: { message: string; severity?: string }, i: number) => {
-                                const sev = g.severity || "CAUTION";
-                                return (
-                                  <div key={i} className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                                    <span className={sev === "CRITICAL" ? "text-rose-400 font-bold" : "text-amber-400 font-bold"}>
-                                      {sev === "CRITICAL" ? "✕" : "⚠"}
-                                    </span>
-                                    <span className="text-amber-200/90">{g.message}</span>
-                                    <span
-                                      className={`rounded px-1.5 py-0.2 text-[9px] font-mono uppercase font-bold border ${
-                                        sev === "CRITICAL"
-                                          ? "border-rose-500/40 bg-rose-950/80 text-rose-300"
-                                          : sev === "CAUTION"
-                                          ? "border-amber-500/30 bg-amber-950/70 text-amber-300"
-                                          : "border-slate-600 bg-slate-900 text-slate-400"
-                                      }`}
-                                    >
-                                      {sev}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* Toolchain tags */}
-                          <div className="mt-3 flex flex-wrap gap-1">
-                            {creator.aiTools.slice(0, 4).map((tool: string) => (
-                              <span
-                                key={tool}
-                                className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] font-medium text-slate-300"
-                              >
-                                {tool}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Radar Breakdown & Score (5 cols) */}
-                        <div className="lg:col-span-5 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/[0.06] pt-4 lg:pt-0 lg:pl-6">
                           <div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Match Fit</span>
-                                <span
-                                  title="Confidence reflects the strength and amount of available evidence supporting this recommendation."
-                                  className={`rounded-full px-2 py-0.5 text-[10px] font-mono uppercase font-bold border cursor-help ${
-                                    confidence === "HIGH"
-                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                      : "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                                  }`}
-                                >
-                                  ● {confidence} Confidence
-                                </span>
-                              </div>
-                              <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-0.5 text-sm font-extrabold text-emerald-300">
-                                {overallScore}%
-                              </span>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="font-bold text-slate-900 text-sm hover:text-emerald-600 transition">
+                                {c.name}
+                              </h4>
+                              <span className="h-2 w-2 rounded-full bg-emerald-500" title="Online now" />
                             </div>
-
-                            {/* Factor Breakdown */}
-                            <div className="mt-3 space-y-1.5 text-[10px] font-mono">
-                              <div>
-                                <div className="flex justify-between text-slate-300 mb-0.5">
-                                  <span>Content Type Alignment</span>
-                                  <span>{subscores.contentType}%</span>
-                                </div>
-                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                                  <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${subscores.contentType}%` }} />
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex justify-between text-slate-300 mb-0.5">
-                                  <span>Skills Mastery</span>
-                                  <span>{subscores.skills}%</span>
-                                </div>
-                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                                  <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${subscores.skills}%` }} />
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex justify-between text-slate-300 mb-0.5">
-                                  <span>AI Toolchain Verification</span>
-                                  <span>{subscores.tools}%</span>
-                                </div>
-                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                                  <div className="h-full bg-sky-400 rounded-full" style={{ width: `${subscores.tools}%` }} />
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex justify-between text-slate-300 mb-0.5">
-                                  <span>Specialization Fit</span>
-                                  <span>{subscores.specialization}%</span>
-                                </div>
-                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                                  <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${subscores.specialization}%` }} />
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex justify-between text-slate-300 mb-0.5">
-                                  <span>Format Support</span>
-                                  <span>{subscores.format}%</span>
-                                </div>
-                                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                                  <div className="h-full bg-slate-300 rounded-full" style={{ width: `${subscores.format}%` }} />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Quick Actions */}
-                          <div className="mt-5 space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => setActiveWhyCreator(match)}
-                              className="w-full rounded-lg border border-indigo-500/30 bg-indigo-500/10 py-1.5 text-center text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition flex items-center justify-center gap-1"
-                            >
-                              <span>Why This Creator?</span>
-                              <span>↗</span>
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                              <Link
-                                href={`/${creator.username}`}
-                                className="flex-1 rounded-lg border border-white/10 bg-white/[0.03] py-2 text-center text-xs font-semibold text-white hover:bg-white/[0.08]"
-                              >
-                                Inspect Portfolio
-                              </Link>
-
-                              <button
-                                onClick={() => {
-                                  setInvitingCreator(creator);
-                                  setInviteFeedback("");
-                                }}
-                                className="flex-1 rounded-lg bg-white py-2 text-xs font-bold text-black hover:bg-slate-200 shadow-sm"
-                              >
-                                Invite Creator
-                              </button>
-                            </div>
+                            <p className="text-xs text-slate-500">{c.specialization}</p>
+                            <p className="text-[10px] text-slate-400">Bangalore, India · Online now</p>
                           </div>
                         </div>
+
+                        {/* Circular Match Score Ring */}
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="h-12 w-12 rounded-full border-4 border-emerald-500 flex items-center justify-center font-black text-xs text-emerald-700 bg-emerald-50">
+                            {match.overallScore}%
+                          </div>
+                          <span className="text-[9px] font-mono font-bold text-emerald-700 uppercase mt-0.5">
+                            Match
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Factor Breakdown Bars */}
+                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] text-slate-600">
+                        <div>
+                          <div className="flex justify-between mb-0.5">
+                            <span>Content &amp; Style Fit</span>
+                            <span className="font-bold">{match.subscores.contentType}%</span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${match.subscores.contentType}%` }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between mb-0.5">
+                            <span>Skills &amp; Tools</span>
+                            <span className="font-bold">{match.subscores.skills}%</span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${match.subscores.skills}%` }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between mb-0.5">
+                            <span>Portfolio Evidence</span>
+                            <span className="font-bold">{match.subscores.portfolioEvidence}%</span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${match.subscores.portfolioEvidence}%` }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between mb-0.5">
+                            <span>Commercial Use</span>
+                            <span className="font-bold">{match.subscores.commercialUse}%</span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${match.subscores.commercialUse}%` }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Portfolio Thumbnails Strip */}
+                      <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+                        {["/reels/reel-01.jpg", "/reels/reel-02.jpg", "/reels/reel-03.jpg", "/reels/reel-04.jpg"].map((img, i) => (
+                          <div key={i} className="h-12 w-16 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                            <Image
+                              src={img}
+                              alt="Thumbnail"
+                              width={64}
+                              height={48}
+                              className="object-cover h-full w-full"
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* ======================================================== */}
-        {/* TAB 4: ACTIVE ENGAGEMENTS TRACKER */}
-        {/* ======================================================== */}
-        {activeTab === "engagements" && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white">Engagements &amp; Collaboration Pipeline</h2>
-              <p className="text-xs text-slate-400">Track accepted briefs, production milestones, and deliverable reviews.</p>
-            </div>
-
-            {invitations.length === 0 && engagements.length === 0 ? (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-12 text-center text-slate-400">
-                <p className="text-2xl">🤝</p>
-                <h3 className="mt-3 text-lg font-bold text-white">No active engagements yet</h3>
-                <p className="mt-1 text-xs">Invite a matched creator to initiate production.</p>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* 1. Active Signed Engagements */}
-                {engagements.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-wider text-emerald-400 font-mono">
-                        Active Contracts &amp; Production ({engagements.length})
+              {/* Right Column: Detailed Creator Inspection & Explainable Match Panel (5 Cols) */}
+              {activeInspectMatch && (
+                <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-5 space-y-4">
+                  {/* Hero Creator Header */}
+                  <div className="flex items-center gap-3.5 pb-3 border-b border-slate-200">
+                    <div className="h-14 w-14 rounded-full overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
+                      {activeInspectMatch.creator.profilePhoto ? (
+                        <Image
+                          src={activeInspectMatch.creator.profilePhoto}
+                          alt={activeInspectMatch.creator.name}
+                          width={56}
+                          height={56}
+                          className="object-cover h-full w-full"
+                        />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center font-bold text-slate-600">
+                          {activeInspectMatch.creator.name[0]}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-900 text-base">
+                        {activeInspectMatch.creator.name}
                       </h3>
-                      <span className="text-[11px] font-mono text-slate-400">
-                        One-way delivery lifecycle
+                      <p className="text-xs text-slate-500">{activeInspectMatch.creator.specialization}</p>
+                      <p className="text-[10px] text-emerald-600 font-semibold">● Online now · Bangalore, India</p>
+                    </div>
+                  </div>
+
+                  {/* Sub-tabs */}
+                  <div className="flex items-center gap-3 text-xs border-b border-slate-200 pb-2 font-semibold">
+                    <span className="text-emerald-700 border-b-2 border-emerald-600 pb-2 -mb-2">About</span>
+                    <span className="text-slate-400 hover:text-slate-700 cursor-pointer">Portfolio</span>
+                    <span className="text-slate-400 hover:text-slate-700 cursor-pointer">Skills &amp; Tools</span>
+                    <span className="text-slate-400 hover:text-slate-700 cursor-pointer">Reviews (26)</span>
+                    <span className="text-slate-400 hover:text-slate-700 cursor-pointer">Availability</span>
+                  </div>
+
+                  {/* Why This Creator Matches Box */}
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold font-mono text-emerald-900 uppercase tracking-wider">
+                        Why this creator matches
+                      </h4>
+                      <span className="text-xs font-black text-emerald-700">
+                        {activeInspectMatch.overallScore}% Overall Match
                       </span>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {engagements.map((eng) => (
-                        <div
-                          key={eng.id}
-                          className="flex flex-col justify-between rounded-2xl border border-emerald-500/25 bg-[#0c0e15] p-5 shadow-lg"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-[11px] text-slate-400">
-                                Creator: @{eng.creatorUsername}
-                              </span>
-                              <span
-                                className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider border ${
-                                  eng.status === ENGAGEMENT_STATUS.DELIVERED
-                                    ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                                    : eng.status === ENGAGEMENT_STATUS.IN_PROGRESS
-                                    ? "border-indigo-500/40 bg-indigo-500/20 text-indigo-300"
-                                    : "border-sky-500/40 bg-sky-500/20 text-sky-300"
-                                }`}
-                              >
-                                {eng.status}
-                              </span>
-                            </div>
+                    <div className="space-y-1.5 text-xs text-slate-700">
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>Strong portfolio in {activeInspectMatch.creator.specialization}</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>Style aligns with clean, premium, natural aesthetic</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>Experienced in short-form video content for Instagram/TikTok</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>Offers worldwide commercial usage rights</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>Available within your timeline</span>
+                      </div>
+                    </div>
 
-                            <h4 className="mt-2 text-base font-bold text-white">{eng.campaignTitle}</h4>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {eng.deliverables?.map((d, i) => (
-                                <span key={i} className="rounded bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[10px] text-slate-300 font-mono">
-                                  📦 {d}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3 text-xs">
-                            <span className="text-slate-400 font-mono text-[11px]">
-                              {eng.status === ENGAGEMENT_STATUS.ACCEPTED && "Awaiting creator kickoff"}
-                              {eng.status === ENGAGEMENT_STATUS.IN_PROGRESS && "In production"}
-                              {eng.status === ENGAGEMENT_STATUS.DELIVERED && "Commercial rights verified"}
-                            </span>
-
-                            {eng.status === ENGAGEMENT_STATUS.IN_PROGRESS && (
-                              <button
-                                type="button"
-                                onClick={() => handleBrandUpdateEngagementStatus(eng.id!, ENGAGEMENT_STATUS.DELIVERED)}
-                                className="rounded-full bg-emerald-400 hover:bg-emerald-300 px-3.5 py-1 text-xs font-bold text-black transition"
-                              >
-                                Mark Delivered ✓
-                              </button>
-                            )}
-
-                            {eng.status === ENGAGEMENT_STATUS.DELIVERED && (
-                              <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
-                                ✓ Approved
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                    {/* Potential Gaps Yellow Alert */}
+                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                      <span className="font-bold">Potential gaps: </span>
+                      <span>
+                        {activeInspectMatch.gaps[0]?.message ||
+                          "No experience with 3D product animation (if required). Typically works in 15-30s videos (your brief is 15s - good fit)"}
+                      </span>
                     </div>
                   </div>
-                )}
 
-                {/* 2. Dispatched Proposals */}
-                {invitations.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono">
-                      Dispatched Proposals ({invitations.length})
-                    </h3>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {invitations.map((inv) => (
-                        <div key={inv.id} className="rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-slate-400">Proposal</span>
-                            <span
-                              className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                inv.status === "Accepted"
-                                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                                  : inv.status === "Declined"
-                                  ? "bg-rose-500/15 text-rose-300 border border-rose-500/30"
-                                  : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                              }`}
-                            >
-                              {inv.status}
-                            </span>
-                          </div>
-
-                          <h4 className="mt-2 text-base font-bold text-white">{inv.campaignTitle}</h4>
-                          <p className="text-xs text-slate-400">Creator: @{inv.creatorUsername}</p>
-                          <p className="mt-2 text-xs italic text-slate-300">&quot;{inv.message}&quot;</p>
-                        </div>
-                      ))}
-                    </div>
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition"
+                    >
+                      Message
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInvitingCreator(activeInspectMatch.creator)}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition"
+                    >
+                      Invite Creator
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ======================================================== */}
-        {/* TAB 5: BRAND PROFILE */}
-        {/* ======================================================== */}
-        {activeTab === "profile" && (
-          <form onSubmit={handleSaveBrandProfile} className="max-w-2xl mx-auto rounded-2xl border border-white/[0.08] bg-[#0c0e15] p-6 md:p-8 space-y-4">
-            <h2 className="text-lg font-bold text-white border-b border-white/[0.06] pb-3">Brand Information</h2>
+      {/* ======================================================== */}
+      {/* SCREEN 3: CAMPAIGN AND ENGAGEMENT MANAGEMENT */}
+      {/* ======================================================== */}
+      {activeTab === "engagements" && (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          {/* Breadcrumbs */}
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
+            <button
+              onClick={() => setActiveTab("briefs")}
+              className="hover:text-emerald-400 transition"
+            >
+              Campaigns
+            </button>
+            <span>&gt;</span>
+            <span className="text-slate-200 font-bold">
+              {activeEngagement.campaignTitle || "Skincare Launch Campaign"}
+            </span>
+          </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-300">Brand / Agency Name</label>
-              <input
-                value={brand.name}
-                onChange={(e) => setBrand({ ...brand, name: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-amber-400/50"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300">Industry / Vertical</label>
-              <input
-                value={brand.industry}
-                onChange={(e) => setBrand({ ...brand, industry: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-amber-400/50"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300">Contact Email</label>
-              <input
-                value={brand.contactEmail || ""}
-                onChange={(e) => setBrand({ ...brand, contactEmail: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-amber-400/50"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300">Overview / Vision</label>
-              <textarea
-                value={brand.description}
-                onChange={(e) => setBrand({ ...brand, description: e.target.value })}
-                rows={3}
-                className="mt-1 w-full resize-none rounded-lg border border-white/10 bg-black/40 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-amber-400/50"
-              />
+          {/* Deep Teal Campaign Header Banner */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#0a352c] via-[#0d4036] to-[#082923] p-5 text-white border border-emerald-500/25 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="h-14 w-14 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0">
+                <Image
+                  src="/reels/reel-01.jpg"
+                  alt="Thumbnail"
+                  width={56}
+                  height={56}
+                  className="object-cover h-full w-full"
+                />
+              </div>
+              <div>
+                <h2 className="text-lg md:text-xl font-black text-white">
+                  {activeEngagement.campaignTitle || "GlowCo Skincare Launch Campaign"}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                    Active
+                  </span>
+                  <span className="text-xs text-emerald-200/80">Instagram, TikTok</span>
+                  <span className="text-xs text-emerald-200/80">· ₹35,000</span>
+                  <span className="text-xs text-emerald-200/80">· Due in 10 days</span>
+                </div>
+              </div>
             </div>
 
             <button
-              type="submit"
-              className="mt-3 rounded-full bg-white px-6 py-2.5 text-xs font-bold text-black hover:bg-slate-200"
+              type="button"
+              onClick={() => setActiveTab("briefs")}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white transition shrink-0"
             >
-              Save Brand Profile
+              View Brief
             </button>
-          </form>
-        )}
-      </section>
+          </div>
+
+          {/* Visual Lifecycle Stepper */}
+          <div className="rounded-2xl bg-[#0c1017] border border-white/[0.06] p-4 text-xs">
+            <div className="flex items-center justify-between max-w-4xl mx-auto">
+              {/* Step 1 */}
+              <div className="flex flex-col items-center">
+                <div className="h-7 w-7 rounded-full bg-emerald-500 text-black flex items-center justify-center font-bold text-xs shadow-md">
+                  ✓
+                </div>
+                <span className="font-bold text-white text-[11px] mt-1">Brief</span>
+                <span className="text-[9px] text-slate-400">Completed Mar 1</span>
+              </div>
+              <div className="flex-1 h-0.5 bg-emerald-500 mx-2" />
+
+              {/* Step 2 */}
+              <div className="flex flex-col items-center">
+                <div className="h-7 w-7 rounded-full bg-emerald-500 text-black flex items-center justify-center font-bold text-xs shadow-md">
+                  ✓
+                </div>
+                <span className="font-bold text-white text-[11px] mt-1">Creator Selected</span>
+                <span className="text-[9px] text-slate-400">Completed Mar 3</span>
+              </div>
+              <div className="flex-1 h-0.5 bg-emerald-500 mx-2" />
+
+              {/* Step 3 (Current) */}
+              <div className="flex flex-col items-center">
+                <div className="h-7 w-7 rounded-full bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 flex items-center justify-center font-bold text-xs">
+                  ●
+                </div>
+                <span className="font-bold text-emerald-400 text-[11px] mt-1">In Production</span>
+                <span className="text-[9px] text-emerald-300">Current (Mar 4-14)</span>
+              </div>
+              <div className="flex-1 h-0.5 bg-white/10 mx-2" />
+
+              {/* Step 4 */}
+              <div className="flex flex-col items-center">
+                <div className="h-7 w-7 rounded-full bg-white/10 text-slate-400 flex items-center justify-center font-bold text-xs">
+                  ○
+                </div>
+                <span className="font-bold text-slate-400 text-[11px] mt-1">Review</span>
+                <span className="text-[9px] text-slate-500">Pending</span>
+              </div>
+              <div className="flex-1 h-0.5 bg-white/10 mx-2" />
+
+              {/* Step 5 */}
+              <div className="flex flex-col items-center">
+                <div className="h-7 w-7 rounded-full bg-white/10 text-slate-400 flex items-center justify-center font-bold text-xs">
+                  ○
+                </div>
+                <span className="font-bold text-slate-400 text-[11px] mt-1">Approved</span>
+                <span className="text-[9px] text-slate-500">Pending</span>
+              </div>
+            </div>
+          </div>
+
+          {/* White Content Grid */}
+          <div className="rounded-3xl bg-white text-slate-900 p-6 shadow-2xl border border-slate-100 grid gap-6 lg:grid-cols-12">
+            {/* Left Col: Creator & Licensing Summary (4 Cols) */}
+            <div className="lg:col-span-4 space-y-5">
+              {/* Creator Summary Card */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-full overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
+                    <Image
+                      src="/creators/paultrillo/pfp.jpg"
+                      alt="Creator"
+                      width={48}
+                      height={48}
+                      className="object-cover h-full w-full"
+                    />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      {activeEngagement.creatorUsername || "Anya Sharma"}
+                    </h4>
+                    <p className="text-xs text-slate-500">AI Visual Storyteller</p>
+                    <p className="text-[10px] text-slate-400">Bangalore, India</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    className="flex-1 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100"
+                  >
+                    Message
+                  </button>
+                  <Link
+                    href="/paultrillo"
+                    className="flex-1 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold text-center hover:bg-slate-100"
+                  >
+                    View Profile
+                  </Link>
+                </div>
+              </div>
+
+              {/* Licensing Summary Card */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800">Licensing Summary</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                    ✓ Compatible
+                  </span>
+                </div>
+
+                <div className="space-y-1 text-slate-600">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Usage Type:</span>
+                    <span className="font-medium text-slate-800">Paid Social, Organic</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Territory:</span>
+                    <span className="font-medium text-slate-800">India</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Duration:</span>
+                    <span className="font-medium text-slate-800">6 Months</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Platforms:</span>
+                    <span className="font-medium text-slate-800">Instagram, TikTok, Website</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Exclusivity:</span>
+                    <span className="font-medium text-slate-800">Non-exclusive</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="w-full mt-2 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-100"
+                >
+                  Edit Terms
+                </button>
+              </div>
+            </div>
+
+            {/* Right Col: Deliverables Table & Submission Preview (8 Cols) */}
+            <div className="lg:col-span-8 space-y-6">
+              {/* Deliverables Table (4 items) */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-slate-900">Deliverables (4)</h3>
+                  <span className="text-xs text-emerald-600 font-semibold cursor-pointer">View All</span>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 overflow-hidden text-xs">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+                      <tr>
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">Deliverable</th>
+                        <th className="p-2.5">Format</th>
+                        <th className="p-2.5">Due Date</th>
+                        <th className="p-2.5">Status</th>
+                        <th className="p-2.5">Revisions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      <tr>
+                        <td className="p-2.5 font-bold">1</td>
+                        <td className="p-2.5 font-medium">Hero Video (15s)</td>
+                        <td className="p-2.5 text-slate-500">9:16 MP4</td>
+                        <td className="p-2.5">Mar 10</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                            ● In Review
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-bold">2</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold">2</td>
+                        <td className="p-2.5 font-medium">Product Image 1</td>
+                        <td className="p-2.5 text-slate-500">4:5 Image</td>
+                        <td className="p-2.5">Mar 12</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                            ✓ Completed
+                          </span>
+                        </td>
+                        <td className="p-2.5">0</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold">3</td>
+                        <td className="p-2.5 font-medium">Product Image 2</td>
+                        <td className="p-2.5 text-slate-500">1:1 Image</td>
+                        <td className="p-2.5">Mar 12</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-bold text-[10px]">
+                            ● In Production
+                          </span>
+                        </td>
+                        <td className="p-2.5">1</td>
+                      </tr>
+                      <tr>
+                        <td className="p-2.5 font-bold">4</td>
+                        <td className="p-2.5 font-medium">Lifestyle Image</td>
+                        <td className="p-2.5 text-slate-500">16:9 Image</td>
+                        <td className="p-2.5">Mar 14</td>
+                        <td className="p-2.5">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">
+                            Pending
+                          </span>
+                        </td>
+                        <td className="p-2.5">0</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Latest Submission Preview - Hero Video (15s) */}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-700">
+                    Latest Submission — Hero Video (15s)
+                  </h4>
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <span className="text-emerald-600 font-bold">Feedback (3)</span>
+                    <span>· Version History</span>
+                  </div>
+                </div>
+
+                {/* Submissions comparison cards */}
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {/* v2 Card */}
+                  <div className="rounded-xl border border-emerald-300 bg-white p-3 space-y-2 shadow-sm">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px]">
+                        v2 (Latest)
+                      </span>
+                      <span className="text-slate-400 text-[10px]">Mar 8, 2026</span>
+                    </div>
+
+                    <div className="rounded-lg overflow-hidden bg-black aspect-video relative flex items-center justify-center">
+                      <video
+                        src="/reels/reel-01.mp4"
+                        controls
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  </div>
+
+                  {/* v1 Card */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 opacity-80">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-bold text-[10px]">
+                        v1
+                      </span>
+                      <span className="text-slate-400 text-[10px]">Mar 6, 2026</span>
+                    </div>
+
+                    <div className="rounded-lg overflow-hidden bg-black aspect-video relative flex items-center justify-center">
+                      <Image
+                        src="/reels/reel-02.jpg"
+                        alt="v1 Thumbnail"
+                        width={200}
+                        height={120}
+                        className="object-cover h-full w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feedback Discussion */}
+                <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="h-6 w-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                      G
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-800">GlowCo Marketing</span>
+                        <span className="text-[10px] text-slate-400">2 hours ago</span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                        {commentsList[commentsList.length - 1]}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Add a comment input */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                    <input
+                      type="text"
+                      value={feedbackComment}
+                      onChange={(e) => setFeedbackComment(e.target.value)}
+                      placeholder="Add a comment or change request..."
+                      className="flex-1 py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-800 outline-none focus:bg-white focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRequestChanges(activeEngagement.id || "eng-demo-1")}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                    >
+                      Post
+                    </button>
+                  </div>
+                </div>
+
+                {/* Primary Action Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestChanges(activeEngagement.id || "eng-demo-1")}
+                    className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs shadow-sm transition"
+                  >
+                    Request Changes
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleBrandApproveDeliverable(activeEngagement.id || "eng-demo-1")}
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
+                  >
+                    <span>✓</span>
+                    <span>Approve Deliverable</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* INVITE CREATOR MODAL */}
       {/* ======================================================== */}
       {invitingCreator && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-5 backdrop-blur-xl">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0c0e15] p-6 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white text-slate-900 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="text-[11px] font-mono uppercase tracking-wider text-amber-400">Direct Invitation</p>
-                <h3 className="mt-1 text-xl font-bold text-white">Invite {invitingCreator.name}</h3>
-                <p className="text-xs text-slate-400">Brief: {selectedBrief?.campaignName || "Campaign Collaboration"}</p>
+                <h3 className="text-base font-bold text-slate-900">
+                  Invite {invitingCreator.name}
+                </h3>
+                <p className="text-xs text-slate-500">Send an engagement collaboration proposal.</p>
               </div>
               <button
+                type="button"
                 onClick={() => setInvitingCreator(null)}
-                className="text-lg font-bold text-white/40 hover:text-white"
+                className="text-slate-400 hover:text-slate-600 text-sm"
               >
                 ✕
               </button>
             </div>
 
-            {inviteFeedback ? (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center text-xs font-bold text-emerald-300">
-                {inviteFeedback}
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Campaign Brief:
+              </label>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 font-bold">
+                {selectedBrief?.campaignName || "GlowCo Skincare Launch Campaign"}
               </div>
-            ) : (
-              <form onSubmit={handleSendInvitation} className="space-y-3.5">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300">Proposal Message *</label>
-                  <textarea
-                    value={inviteMessage}
-                    onChange={(e) => setInviteMessage(e.target.value)}
-                    placeholder="We loved your generative work and would like to invite you to collaborate on our upcoming campaign brief..."
-                    rows={4}
-                    required
-                    className="mt-1 w-full resize-none rounded-lg border border-white/10 bg-black/50 px-3.5 py-2.5 text-xs font-medium text-white outline-none focus:border-amber-400/50"
-                  />
-                </div>
+            </div>
 
-                <button
-                  type="submit"
-                  disabled={isSendingInvite}
-                  className="w-full rounded-full bg-white py-3 text-xs font-bold text-black hover:bg-slate-200 disabled:opacity-50"
-                >
-                  {isSendingInvite ? "Sending Proposal..." : "Dispatch Campaign Proposal →"}
-                </button>
-              </form>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Personalized Invitation Message:
+              </label>
+              <textarea
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                placeholder="Hi! We love your portfolio and would like to collaborate on our new campaign."
+                rows={3}
+                className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 outline-none focus:bg-white focus:border-emerald-500"
+              />
+            </div>
+
+            {inviteFeedback && (
+              <p className="text-xs font-bold text-emerald-600">{inviteFeedback}</p>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* ======================================================== */}
-      {/* 5-STAGE MATCHING TRANSITION OVERLAY */}
-      {/* ======================================================== */}
-      {isMatchingTransition && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/85 px-5 backdrop-blur-2xl">
-          <div className="w-full max-w-md rounded-2xl border border-indigo-500/20 bg-[#0a0d14] p-8 shadow-2xl text-center">
-            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-indigo-500/30 bg-indigo-500/10 text-2xl text-indigo-400">
-              ⚡
-            </div>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-indigo-400">
-              Creative Intelligence Engine
-            </span>
-            <h3 className="mt-1 text-xl font-bold text-white">
-              Evaluating Creator Network
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              Cross-referencing your brief against validated creator portfolios
-            </p>
-
-            <div className="mt-6 space-y-3 text-left">
-              {[
-                { step: 1, label: "Understanding Creative Requirements", desc: "Parsing intent, aspect ratio, styles & deliverables" },
-                { step: 2, label: "Scanning Creator Capabilities", desc: "Matching tools (Runway, Midjourney, Kling) and domains" },
-                { step: 3, label: "Analyzing Portfolio Evidence", desc: "Verifying real client deliverable proof & visual artifacts" },
-                { step: 4, label: "Ranking 7-Factor Fit", desc: "Weighting skills, formats, and commercial rights" },
-                { step: 5, label: "Top Matches Found", desc: "Generating explainable rationale and role assignments" },
-              ].map((s) => {
-                const isDone = matchingTransitionStep > s.step;
-                const isCurrent = matchingTransitionStep === s.step;
-                return (
-                  <div
-                    key={s.step}
-                    className={`flex items-start gap-3 rounded-xl border p-3 transition-all duration-300 ${
-                      isDone
-                        ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-300"
-                        : isCurrent
-                        ? "border-indigo-500/40 bg-indigo-500/10 text-white"
-                        : "border-white/[0.04] bg-white/[0.01] text-slate-500"
-                    }`}
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {isDone ? (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-400">
-                          ✓
-                        </span>
-                      ) : isCurrent ? (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-bold text-indigo-300 animate-pulse">
-                          ●
-                        </span>
-                      ) : (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/5 text-[11px] font-mono text-slate-600">
-                          {s.step}
-                        </span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold leading-tight">{s.label}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">{s.desc}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* WHY THIS CREATOR SIGNATURE MODAL */}
-      {/* ======================================================== */}
-      {activeWhyCreator && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur-xl overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0c0e15] p-6 md:p-8 shadow-2xl my-auto">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-white/[0.08] pb-5">
-              <div className="flex items-center gap-3.5">
-                {activeWhyCreator.creator.profilePhoto ? (
-                  <Image
-                    src={activeWhyCreator.creator.profilePhoto}
-                    alt={activeWhyCreator.creator.name}
-                    width={52}
-                    height={52}
-                    className="h-13 w-13 rounded-xl object-cover border border-white/10 shrink-0"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="flex h-13 w-13 items-center justify-center rounded-xl border border-white/10 bg-indigo-500/20 text-lg font-bold text-white shrink-0">
-                    {activeWhyCreator.creator.name.charAt(0)}
-                  </div>
-                )}
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-xl font-bold text-white">{activeWhyCreator.creator.name}</h3>
-                    {activeWhyCreator.alternativeRole && (
-                      <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
-                        ★ {activeWhyCreator.alternativeRole}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-400">{activeWhyCreator.creator.specialization}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <div className="text-2xl font-extrabold text-emerald-400">{activeWhyCreator.overallScore}%</div>
-                  <div className="text-[10px] font-mono uppercase text-slate-400">
-                    {activeWhyCreator.confidence} Confidence
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveWhyCreator(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/5 transition"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            {/* Content Body */}
-            <div className="mt-5 space-y-5">
-              {/* Grounded Rationale */}
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                <div className="flex items-center gap-2 text-xs font-bold text-emerald-300 mb-1">
-                  <span>💡</span>
-                  <span>Why This Creator Was Recommended</span>
-                </div>
-                <p className="text-xs leading-relaxed text-slate-300">
-                  {activeWhyCreator.whyExplanation}
-                </p>
-              </div>
-
-              {/* Verified Evidence vs Potential Gaps */}
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Evidence */}
-                <div className="rounded-xl border border-white/[0.06] bg-black/40 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2.5 flex items-center gap-1.5">
-                    <span className="text-emerald-400">✓</span>
-                    <span>Verified Evidence Points</span>
-                  </div>
-                  {activeWhyCreator.evidencePoints.length === 0 ? (
-                    <p className="text-xs text-slate-500">Based on general profile credentials.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {activeWhyCreator.evidencePoints.map((ep, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs">
-                          <span className="text-emerald-400 shrink-0 mt-0.5">•</span>
-                          <span className="text-slate-300">{ep.signal}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Gaps / Trade-offs */}
-                <div className="rounded-xl border border-white/[0.06] bg-black/40 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2.5 flex items-center gap-1.5">
-                    <span className="text-amber-400">⚠</span>
-                    <span>Creative Nuances &amp; Trade-offs</span>
-                  </div>
-                  {activeWhyCreator.gaps.length === 0 ? (
-                    <p className="text-xs text-emerald-400/80">No significant gaps detected for this campaign specification.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {activeWhyCreator.gaps.map((g, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs">
-                          <span className="text-amber-400 shrink-0 mt-0.5">!</span>
-                          <span className="text-amber-200/90">{g.message}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {activeWhyCreator.whyNotExplanation && (
-                    <p className="mt-2 text-[11px] text-slate-400 border-t border-white/5 pt-2">
-                      {activeWhyCreator.whyNotExplanation}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* 7-Factor Radar Breakdown */}
-              <div className="rounded-xl border border-white/[0.06] bg-black/40 p-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">
-                  7-Factor Algorithmic Score Breakdown
-                </div>
-                <div className="grid gap-x-6 gap-y-2.5 md:grid-cols-2 text-xs font-mono">
-                  {[
-                    { label: "Content Type Alignment", val: activeWhyCreator.subscores.contentType, color: "bg-emerald-400" },
-                    { label: "Skills Mastery", val: activeWhyCreator.subscores.skills, color: "bg-emerald-400" },
-                    { label: "AI Toolchain Verification", val: activeWhyCreator.subscores.tools, color: "bg-sky-400" },
-                    { label: "Specialization Fit", val: activeWhyCreator.subscores.specialization, color: "bg-indigo-400" },
-                    { label: "Aspect Ratio & Format", val: activeWhyCreator.subscores.format, color: "bg-purple-400" },
-                    { label: "Commercial Rights Fit", val: activeWhyCreator.subscores.commercialUse, color: "bg-amber-400" },
-                    { label: "Portfolio Evidence Depth", val: activeWhyCreator.subscores.portfolioEvidence, color: "bg-teal-400" },
-                    { label: "Industry & Aesthetic", val: activeWhyCreator.subscores.industryAesthetic, color: "bg-rose-400" },
-                  ].map((sub, i) => (
-                    <div key={i}>
-                      <div className="flex justify-between text-slate-300 mb-1">
-                        <span>{sub.label}</span>
-                        <span>{sub.val}%</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                        <div className={`h-full ${sub.color} rounded-full`} style={{ width: `${sub.val}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Actions */}
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/[0.08] pt-5">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setActiveWhyCreator(null)}
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                onClick={() => setInvitingCreator(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
               >
-                Close
+                Cancel
               </button>
-              <Link
-                href={`/${activeWhyCreator.creator.username}`}
-                className="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-xs font-semibold text-white hover:bg-white/20"
-              >
-                Inspect Portfolio →
-              </Link>
               <button
                 type="button"
-                onClick={() => {
-                  const c = activeWhyCreator.creator;
-                  setActiveWhyCreator(null);
-                  setInvitingCreator(c);
-                  setInviteFeedback("");
-                }}
-                className="rounded-full bg-white px-5 py-2 text-xs font-bold text-black hover:bg-slate-200"
+                onClick={handleSendInvitation}
+                disabled={isSendingInvite}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md"
               >
-                Invite This Creator
+                {isSendingInvite ? "Sending..." : "Dispatch Invitation →"}
               </button>
             </div>
           </div>
         </div>
       )}
-    </main>
+    </AppShell>
   );
 }

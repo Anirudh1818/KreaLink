@@ -132,6 +132,64 @@ export type Invitation = {
   updatedAt?: unknown;
 };
 
+export type DeliverableSubmission = {
+  assetUrl?: string;
+  notes?: string;
+  submittedAt?: string;
+};
+
+export type DeliverableReview = {
+  feedback?: string;
+  approved?: boolean;
+  reviewedAt?: string;
+};
+
+export type DeliverableItem = {
+  id: string;
+  title: string;
+  format: string;
+  dueDate: string;
+  status: "Pending" | "In Production" | "In Review" | "Completed" | "Changes Requested";
+  revisionsCount: number;
+};
+
+export type DeliverableRevision = {
+  version: string; // "v1", "v2"
+  title: string;
+  assetUrl: string;
+  thumbnailUrl?: string;
+  submittedAt: string;
+  notes?: string;
+  status: "Reviewing" | "Changes requested" | "Approved";
+  feedback?: string;
+  fileMetadata?: {
+    format: string;
+    aspectRatio: string;
+    duration: string;
+    resolution: string;
+    size: string;
+  };
+};
+
+export type LicensingSummary = {
+  usageType: string;
+  territory: string;
+  duration: string;
+  platforms: string[];
+  exclusivity: string;
+  isCompatible: boolean;
+};
+
+export type DeliveryCheckResult = {
+  fileFormat: { value: string; passed: boolean; note: string };
+  aspectRatio: { value: string; passed: boolean; note: string };
+  duration: { value: string; passed: boolean; note: string };
+  resolution: { value: string; passed: boolean; note: string };
+  fileSize: { value: string; passed: boolean; note: string };
+  audioLevelWarning?: string;
+  isReady: boolean;
+};
+
 export type Engagement = {
   id?: string;
   invitationId?: string;
@@ -143,7 +201,12 @@ export type Engagement = {
   creatorOwnerUid?: string;
   campaignTitle: string;
   deliverables?: string[];
+  deliverableItems?: DeliverableItem[];
+  revisions?: DeliverableRevision[];
+  licensing?: LicensingSummary;
   status: EngagementStatus;
+  submission?: DeliverableSubmission;
+  review?: DeliverableReview;
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
