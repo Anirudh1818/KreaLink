@@ -39,7 +39,7 @@ export function AccountStatusPanel({ account, action }: { account: Account; acti
   if (!emailVerified) {
     return (
       <Notice tone="warn" title="Verify your email address" action={<Link href="/verify-email" className="text-[12px] font-semibold text-forest-700 underline">Verify now</Link>}>
-        We sent a verification link to your inbox. You need a verified email before you can submit an application.
+        We sent a verification link to your inbox. Everything works now — verifying your email is only needed for the optional Verified badge.
       </Notice>
     );
   }
@@ -125,7 +125,7 @@ export function PortalAccessBanner({ role }: { role: MemberRole }) {
       action={
         account.emailVerified && (account.status === "unverified" || account.status === "info_required") ? (
           <Button variant="forest" size="sm" href={verifyHref}>
-            {account.status === "info_required" ? "Update application" : "Complete verification"}
+            {account.status === "info_required" ? "Update application" : "Get Verified badge (optional)"}
           </Button>
         ) : account.emailVerified ? (
           <Link href={verifyHref} className="text-[12px] font-semibold underline">View application</Link>

@@ -19,6 +19,7 @@ const DISCOVER: NavLink = { href: "/discover", label: "Discover", icon: "compass
 const BRAND_HUB: NavLink = { href: "/brand", label: "Brand Hub", icon: "briefcase" };
 const STUDIO: NavLink = { href: "/creator-studio", label: "Studio", icon: "film" };
 const CREATOR_PORTAL: NavLink = { href: "/creator", label: "Creator Portal", icon: "film" };
+const FIND_JOBS: NavLink = { href: "/creator/jobs", label: "Find Jobs", icon: "search" };
 const PIPELINE: NavLink = { href: "/pipeline", label: "Pipeline", icon: "layers" };
 const ADMIN: NavLink = { href: "/admin", label: "Admin", icon: "shield" };
 const TOP: NavLink = { href: "/top-creators", label: "Top Creators", icon: "star" };
@@ -27,7 +28,7 @@ const TOP: NavLink = { href: "/top-creators", label: "Top Creators", icon: "star
 function topLinksFor(account: Account): NavLink[] {
   if (account.isAdmin) return [ADMIN, DISCOVER, TOP];
   if (account.role === "brand") return [DISCOVER, TOP, BRAND_HUB, PIPELINE];
-  if (account.role === "creator") return [DISCOVER, TOP, CREATOR_PORTAL, STUDIO];
+  if (account.role === "creator") return [FIND_JOBS, CREATOR_PORTAL, STUDIO, TOP];
   return [DISCOVER, TOP, BRAND_HUB, STUDIO, PIPELINE];
 }
 
@@ -42,12 +43,14 @@ function sidebarKindFor(account: Account): SidebarKind {
 
 const SIDEBAR_BY_KIND: Record<SidebarKind, NavLink[]> = {
   brand: [
-    { href: "/brand?tab=create-brief", label: "New Brief", icon: "chatPlus" },
+    { href: "/brand?tab=create-brief", label: "Post a Job", icon: "chatPlus" },
+    { href: "/brand?tab=pipeline", label: "Applicants & Pipeline", icon: "inbox" },
     { href: "/brand?tab=matches", label: "Talent Analytics", icon: "chart" },
     { href: "/brand?tab=matches", label: "Compare Creators", icon: "compare" },
   ],
   creator: [
     { href: "/creator", label: "Creator Portal", icon: "home" },
+    { href: "/creator/jobs", label: "Find Jobs", icon: "search" },
     { href: "/creator-studio?tab=engagements", label: "Opportunities", icon: "inbox" },
     { href: "/join-creator", label: "Public Profile", icon: "user" },
     { href: "/creator-studio?tab=licensing", label: "Licensing Terms", icon: "scale" },
@@ -347,7 +350,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="w-full justify-center"
             onClick={onClose}
           >
-            Start New Brief
+            Post a Job
           </Button>
         </div>
         </>
@@ -383,7 +386,7 @@ export function AppShell({
 
   // Portal guard (UX only — firestore.rules enforce access on the server).
   const area = portalForPath(pathname);
-  const decision = account.ready ? decideRoute(pathname, account.principal, account.status) : { allow: true as const };
+  const decision = account.ready ? decideRoute(pathname, account.principal) : { allow: true as const };
   const mustPickRole = account.needsRoleSetup && area !== "public" && !pathname.endsWith("/signup");
   const redirectTo = mustPickRole
     ? "/choose-role?setup=1"

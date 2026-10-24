@@ -229,13 +229,11 @@ describe("verifications: applicant submissions", () => {
     }));
   });
 
-  it("GSTIN is mandatory for brands: missing, malformed or non-Indian applications are refused", async () => {
+  it("GSTIN is optional (any country); a provided GSTIN must be well-formed", async () => {
     const base = { uid: BRAND.uid, role: "brand", status: "pending_review", evidence: [], consent: CONSENT, submittedAt: serverTimestamp(), updatedAt: serverTimestamp() };
     const ref_ = doc(db(BRAND), "verifications", BRAND.uid);
     await assertFails(setDoc(ref_, { ...base, application: { ...BRAND_APP, gstin: "NOT-A-GSTIN" } }));
-    await assertFails(setDoc(ref_, { ...base, application: { ...BRAND_APP, hasGstin: false, gstin: "", altEvidenceType: "udyam_registration", registrationNumber: "UDYAM-MH-00-0000001" } }));
-    await assertFails(setDoc(ref_, { ...base, application: { ...BRAND_APP, country: "US" } }));
-    await assertSucceeds(setDoc(ref_, { ...base, application: BRAND_APP }));
+    await assertSucceeds(setDoc(ref_, { ...base, application: { ...BRAND_APP, hasGstin: false, gstin: "", country: "US" } }));
   });
 
   it("creator without GSTIN can apply (scenario 11)", async () => {
@@ -331,9 +329,13 @@ describe("restricted actions (scenarios 4, 5, 8, 12)", () => {
     };
   }
 
-  it("unverified brand cannot send an invitation; verified brand can", async () => {
-    await assertFails(setDoc(doc(db(BRAND), "invitations", "inv-1"), invite("brand-brand-aa", BRAND.uid)));
+  it("any non-suspended brand can invite (verification is a badge, not a gate)", async () => {
+    await assertSucceeds(setDoc(doc(db(BRAND), "invitations", "inv-1"), invite("brand-brand-aa", BRAND.uid)));
     await assertSucceeds(setDoc(doc(db(BRAND_V), "invitations", "inv-2"), invite("brand-brand-vv", BRAND_V.uid)));
+  });
+
+  it("a brand cannot invite on behalf of another brand", async () => {
+    await assertFails(setDoc(doc(db(BRAND), "invitations", "inv-x"), { ...invite("brand-brand-vv", BRAND.uid) }));
   });
 
   it("creator cannot send brand invitations (scenario 5)", async () => {
@@ -345,14 +347,18 @@ describe("restricted actions (scenarios 4, 5, 8, 12)", () => {
     await assertFails(setDoc(doc(db(BRAND_V), "invitations", "inv-4"), invite("brand-brand-vv", BRAND_V.uid)));
   });
 
-  it("only a verified creator can accept; any recipient may decline", async () => {
+  it("the invited creator can accept or decline; a suspended creator cannot accept", async () => {
     await seed(async (d) => {
       await setDoc(doc(d, "invitations", "to-anya"), { ...invite("brand-brand-vv", BRAND_V.uid), creatorUsername: "anya", creatorOwnerUid: CREATOR.uid });
       await setDoc(doc(d, "invitations", "to-kyle"), invite("brand-brand-vv", BRAND_V.uid));
     });
-    await assertFails(updateDoc(doc(db(CREATOR), "invitations", "to-anya"), { status: "Accepted" }));
-    await assertSucceeds(updateDoc(doc(db(CREATOR), "invitations", "to-anya"), { status: "Declined" }));
-    await assertSucceeds(updateDoc(doc(db(CREATOR_V), "invitations", "to-kyle"), { status: "Accepted" }));
+    await assertSucceeds(updateDoc(doc(db(CREATOR), "invitations", "to-anya"), { status: "Accepted" }));
+    await assertFails(updateDoc(doc(db(CREATOR), "invitations", "to-kyle"), { status: "Accepted" })); // not the recipient
+    await seed(async (d) => {
+      await setDoc(doc(d, "verifications", CREATOR_V.uid), { uid: CREATOR_V.uid, role: "creator", status: "suspended", application: CREATOR_APP, evidence: [], consent: CONSENT, updatedAt: 1 });
+    });
+    await assertFails(updateDoc(doc(db(CREATOR_V), "invitations", "to-kyle"), { status: "Accepted" }));
+    await assertSucceeds(updateDoc(doc(db(CREATOR_V), "invitations", "to-kyle"), { status: "Declined" }));
   });
 
   it("third parties cannot read invitations (scenario 13)", async () => {
@@ -363,10 +369,10 @@ describe("restricted actions (scenarios 4, 5, 8, 12)", () => {
     await assertSucceeds(getDocs(query(collection(db(BRAND_V), "invitations"), where("brandOwnerUid", "==", BRAND_V.uid))));
   });
 
-  it("engagements need verified participants", async () => {
+  it("only participants create and read engagements", async () => {
     const eng = { brandOwnerUid: BRAND_V.uid, creatorOwnerUid: CREATOR.uid, brandId: "brand-brand-vv", creatorUsername: "anya", status: "Accepted" };
-    await assertFails(setDoc(doc(db(CREATOR), "engagements", "e1"), eng));
     await assertSucceeds(setDoc(doc(db(BRAND_V), "engagements", "e2"), eng));
+    await assertFails(setDoc(doc(db(BRAND), "engagements", "e3"), eng)); // not a participant
     await assertFails(getDoc(doc(db(BRAND), "engagements", "e2")));
   });
 });
@@ -444,9 +450,11 @@ describe("pipelineEngagements: shared brand↔creator pipeline (item 5)", () => 
     };
   }
 
-  it("verified brand can open a shared engagement with a real creator; unverified brand cannot", async () => {
+  it("a brand can open a shared engagement with a real creator; others cannot pose as that brand", async () => {
     await assertSucceeds(setDoc(doc(db(BRAND_V), "pipelineEngagements", "brief-1-kyle"), eng("kyle", CREATOR_V.uid)));
-    await assertFails(setDoc(doc(db(BRAND), "pipelineEngagements", "brief-1-kyle"), { ...eng("kyle", CREATOR_V.uid), brandOwnerUid: BRAND.uid }));
+    await assertSucceeds(setDoc(doc(db(BRAND), "pipelineEngagements", "brief-9-kyle"), { ...eng("kyle", CREATOR_V.uid), id: "brief-9-kyle", briefId: "brief-9", brandOwnerUid: BRAND.uid }));
+    await assertFails(setDoc(doc(db(BRAND), "pipelineEngagements", "brief-8-kyle"), { ...eng("kyle", CREATOR_V.uid), id: "brief-8-kyle", briefId: "brief-8" }));
+    await assertFails(setDoc(doc(db(CREATOR_V), "pipelineEngagements", "brief-7-kyle"), { ...eng("kyle", CREATOR_V.uid), id: "brief-7-kyle", briefId: "brief-7", brandOwnerUid: CREATOR_V.uid }));
   });
 
   it("creatorOwnerUid must match the creator profile owner", async () => {
@@ -468,11 +476,14 @@ describe("pipelineEngagements: shared brand↔creator pipeline (item 5)", () => 
     await assertFails(updateDoc(ref_, { brandOwnerUid: CREATOR_V.uid }));
   });
 
-  it("an unverified creator cannot accept paid work", async () => {
+  it("the creator can accept; a suspended creator cannot accept paid work", async () => {
     await seed(async (d) => { await setDoc(doc(d, "pipelineEngagements", "brief-1-anya"), eng("anya", CREATOR.uid, "contacted")); });
-    const ref_ = doc(db(CREATOR), "pipelineEngagements", "brief-1-anya");
-    await assertFails(updateDoc(ref_, { stage: "accepted" }));
-    await assertSucceeds(updateDoc(ref_, { stage: "declined" }));
+    await assertSucceeds(updateDoc(doc(db(CREATOR), "pipelineEngagements", "brief-1-anya"), { stage: "accepted" }));
+    await seed(async (d) => {
+      await setDoc(doc(d, "pipelineEngagements", "brief-2-anya"), { ...eng("anya", CREATOR.uid, "contacted"), id: "brief-2-anya", briefId: "brief-2" });
+      await setDoc(doc(d, "verifications", CREATOR.uid), { uid: CREATOR.uid, role: "creator", status: "suspended", application: CREATOR_APP, evidence: [], consent: CONSENT, updatedAt: 1 });
+    });
+    await assertFails(updateDoc(doc(db(CREATOR), "pipelineEngagements", "brief-2-anya"), { stage: "accepted" }));
   });
 });
 
@@ -534,5 +545,82 @@ describe("reviews: only from approved engagements, immutable, audited removal", 
     b.set(doc(d, "auditLogs", "review-remove-brief-1-kyle"), { action: "review.remove", actorUid: ADMIN.uid, targetUid: "brief-1-kyle", reason: "Abusive language", at: serverTimestamp() });
     b.delete(doc(d, "reviews", "brief-1-kyle"));
     await assertSucceeds(b.commit());
+  });
+});
+
+describe("jobs (briefs) and applications: brand posts, creator applies", () => {
+  const JOB = {
+    brandId: "brand-brand-aa", ownerUid: BRAND.uid, brandName: "GlowCo", campaignName: "Serum launch reel", requirements: "15s vertical",
+    contentType: "Short-form Video", style: [], platform: "Instagram", aspectRatio: "9:16", targetAudience: "Gen Z",
+    deliverables: ["1x 15s reel"], commercialUse: true, status: "Published",
+  };
+  function application(extra: Record<string, unknown> = {}) {
+    return {
+      briefId: "job-1", briefTitle: "Serum launch reel", brandOwnerUid: BRAND.uid, creatorUid: CREATOR.uid,
+      creatorUsername: "anya", creatorName: "Anya", pitch: "I make product films like this every week.", status: "applied",
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...extra,
+    };
+  }
+
+  it("an unverified brand can post a job for its own brand only", async () => {
+    await assertSucceeds(setDoc(doc(db(BRAND), "briefs", "job-1"), JOB));
+    await assertFails(setDoc(doc(db(BRAND), "briefs", "job-2"), { ...JOB, ownerUid: BRAND_V.uid }));      // can't route applicants elsewhere
+    await assertFails(setDoc(doc(db(BRAND), "briefs", "job-3"), { ...JOB, brandId: "brand-brand-vv" })); // not their brand
+    await assertFails(setDoc(doc(db(CREATOR), "briefs", "job-4"), { ...JOB, ownerUid: CREATOR.uid }));   // creators don't post jobs
+    await assertSucceeds(getDoc(doc(anonDb(), "briefs", "job-1")));                                     // job board is public
+  });
+
+  it("a brand cannot reassign a job's owner", async () => {
+    await seed(async (d) => { await setDoc(doc(d, "briefs", "job-1"), JOB); });
+    await assertFails(updateDoc(doc(db(BRAND), "briefs", "job-1"), { ownerUid: BRAND_V.uid }));
+    await assertSucceeds(updateDoc(doc(db(BRAND), "briefs", "job-1"), { requirements: "15s vertical, warm grade" }));
+  });
+
+  describe("applications", () => {
+    beforeEach(async () => {
+      await seed(async (d) => { await setDoc(doc(d, "briefs", "job-1"), JOB); });
+    });
+
+    it("a creator with a published profile applies once to the posting brand", async () => {
+      await assertSucceeds(setDoc(doc(db(CREATOR), "applications", `job-1_${CREATOR.uid}`), application()));
+      await assertFails(setDoc(doc(db(CREATOR), "applications", `job-1_${CREATOR.uid}`), application({ pitch: "Second try at the same job." })));
+    });
+
+    it("rejects misrouted, impersonated or invalid applications", async () => {
+      const ref_ = doc(db(CREATOR), "applications", `job-1_${CREATOR.uid}`);
+      await assertFails(setDoc(ref_, application({ brandOwnerUid: BRAND_V.uid })));   // not the job's owner
+      await assertFails(setDoc(ref_, application({ creatorUsername: "kyle" })));      // someone else's profile
+      await assertFails(setDoc(ref_, application({ status: "shortlisted" })));        // can't self-shortlist
+      await assertFails(setDoc(ref_, application({ pitch: "hi" })));                  // pitch too short
+      await assertFails(setDoc(doc(db(CREATOR), "applications", `job-1_${CREATOR_V.uid}`), application())); // id must be own uid
+      await assertFails(setDoc(doc(db(BRAND), "applications", `job-1_${BRAND.uid}`), application({ creatorUid: BRAND.uid }))); // brands can't apply
+    });
+
+    it("only the posting brand shortlists/declines; the creator can withdraw", async () => {
+      await seed(async (d) => { await setDoc(doc(d, "applications", `job-1_${CREATOR.uid}`), { ...application(), createdAt: 1, updatedAt: 1 }); });
+      const id = `job-1_${CREATOR.uid}`;
+      await assertFails(updateDoc(doc(db(BRAND_V), "applications", id), { status: "shortlisted", updatedAt: serverTimestamp() }));
+      await assertFails(updateDoc(doc(db(CREATOR), "applications", id), { status: "shortlisted", updatedAt: serverTimestamp() }));
+      await assertSucceeds(updateDoc(doc(db(CREATOR), "applications", id), { status: "withdrawn", updatedAt: serverTimestamp() }));
+      await seed(async (d) => { await setDoc(doc(d, "applications", id), { ...application(), createdAt: 1, updatedAt: 1 }); });
+      await assertSucceeds(updateDoc(doc(db(BRAND), "applications", id), { status: "shortlisted", updatedAt: serverTimestamp() }));
+    });
+
+    it("applications are private to the two parties", async () => {
+      await seed(async (d) => { await setDoc(doc(d, "applications", `job-1_${CREATOR.uid}`), { ...application(), createdAt: 1, updatedAt: 1 }); });
+      const id = `job-1_${CREATOR.uid}`;
+      await assertSucceeds(getDoc(doc(db(BRAND), "applications", id)));
+      await assertSucceeds(getDoc(doc(db(CREATOR), "applications", id)));
+      await assertFails(getDoc(doc(db(BRAND_V), "applications", id)));
+      await assertFails(getDoc(doc(anonDb(), "applications", id)));
+      await assertSucceeds(getDocs(query(collection(db(BRAND), "applications"), where("brandOwnerUid", "==", BRAND.uid))));
+    });
+
+    it("a suspended creator cannot apply", async () => {
+      await seed(async (d) => {
+        await setDoc(doc(d, "verifications", CREATOR.uid), { uid: CREATOR.uid, role: "creator", status: "suspended", application: CREATOR_APP, evidence: [], consent: CONSENT, updatedAt: 1 });
+      });
+      await assertFails(setDoc(doc(db(CREATOR), "applications", `job-1_${CREATOR.uid}`), application()));
+    });
   });
 });

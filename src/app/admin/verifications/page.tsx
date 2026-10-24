@@ -105,7 +105,7 @@ function ReviewPanel({ v, adminUid }: { v: WithId<VerificationDoc>; adminUid: st
   const [registry, setRegistry] = useState<string | null>(null);
   // Brands: reviewer must confirm the GSTIN on the official GST portal before approving.
   const [portalChecked, setPortalChecked] = useState(false);
-  const needsPortalCheck = v.role === "brand";
+  const needsPortalCheck = v.role === "brand" && (v.application as BrandApplication).hasGstin && !!(v.application as BrandApplication).gstin;
   const { rows: history } = useAuditLog(v.uid);
 
   useEffect(() => {

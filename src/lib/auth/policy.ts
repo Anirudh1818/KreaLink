@@ -66,11 +66,11 @@ export const STATUS_LABEL: Record<VerificationStatus, string> = {
 
 /** What the account holder sees — no internal reviewer detail. */
 export const STATUS_MESSAGE: Record<VerificationStatus, string> = {
-  unverified: "Complete and submit your verification application to unlock commercial features.",
+  unverified: "Optional: apply for a Verified badge — it builds trust and boosts your Top Creators / brand ranking.",
   pending_review: "Your application is with our review team. We'll email you when there's a decision.",
   verified: "Your account is verified.",
   rejected: "Your application was not approved. See the reason below. Contact support if you believe this is a mistake.",
-  suspended: "Your account is suspended. Commercial features are disabled. Contact support for details.",
+  suspended: "Your account is suspended. Posting, applying and engagements are disabled. Contact support for details.",
   info_required: "We need a little more information. Update your application and resubmit.",
 };
 
@@ -142,11 +142,8 @@ export function canPerform(action: RestrictedAction, a: AccessSnapshot): AccessD
   const role = ACTION_ROLE[action];
   if (!a.signedIn) return { allowed: false, reason: "Sign in to continue." };
   if (a.role !== role) return { allowed: false, reason: `This action is only available to ${role} accounts.` };
-  if (!a.emailVerified) return { allowed: false, reason: "Verify your email address first." };
-  if (a.status === "suspended") return { allowed: false, reason: "Your account is suspended." };
-  if (a.status !== "verified") {
-    return { allowed: false, reason: `Your ${role} account must be verified first (current status: ${STATUS_LABEL[a.status]}).` };
-  }
+  // Verification is an optional trust badge; only suspension blocks commercial actions.
+  if (a.status === "suspended") return { allowed: false, reason: "Your account is suspended. Contact support." };
   return { allowed: true };
 }
 
@@ -176,12 +173,11 @@ export const ADMIN_ACCESS_PATH = "/admin/access";
 export type RouteDecision = { allow: true } | { allow: false; redirectTo: string };
 
 /** Home route for a principal after sign-in. */
-export function homeFor(p: Principal, status: VerificationStatus, emailVerified: boolean): string {
+export function homeFor(p: Principal): string {
   if (p.kind === "admin") return "/admin";
   if (p.kind === "anonymous") return "/login";
-  if (!emailVerified) return "/verify-email";
-  if (status === "verified") return p.role === "brand" ? "/brand" : "/creator";
-  return p.role === "brand" ? "/brand/verification" : "/creator/verification";
+  // Members go straight to their portal; email and badge verification are prompted there.
+  return p.role === "brand" ? "/brand" : "/creator";
 }
 
 /**
@@ -189,7 +185,7 @@ export function homeFor(p: Principal, status: VerificationStatus, emailVerified:
  * browse the brand / creator demo workspaces (preserving the existing demo);
  * signed-in members are kept inside their own portal; /admin is admin-only.
  */
-export function decideRoute(pathname: string, p: Principal, status: VerificationStatus = "unverified"): RouteDecision {
+export function decideRoute(pathname: string, p: Principal): RouteDecision {
   const area = portalForPath(pathname);
   if (area === "public" || OPEN_PORTAL_PATHS.some((o) => pathname.startsWith(o))) return { allow: true };
   if (area === "admin") {
@@ -207,10 +203,6 @@ export function decideRoute(pathname: string, p: Principal, status: Verification
     return { allow: true };
   }
   if (p.role !== area) return { allow: false, redirectTo: p.role === "brand" ? "/brand" : "/creator" };
-  // Brands must complete GSTIN verification before using the Brand Hub.
-  if (p.role === "brand" && status !== "verified" && pathname !== "/brand/verification") {
-    return { allow: false, redirectTo: "/brand/verification" };
-  }
   return { allow: true };
 }
 

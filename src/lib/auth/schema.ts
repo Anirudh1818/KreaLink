@@ -195,11 +195,8 @@ export function validateBrandApplication(a: BrandApplication, evidence: Evidence
   req(e, "representative.designation", a.representative.designation);
   if (!EMAIL.test(a.representative.email)) e["representative.email"] = "Enter a valid email.";
 
-  // GSTIN is mandatory for every brand (KreaLink onboards GST-registered Indian businesses).
-  if (a.country !== "IN") e.country = "Brand accounts currently require an Indian GST registration.";
-  if (!a.hasGstin || !a.gstin.trim()) {
-    e.gstin = "GSTIN is required for brand accounts.";
-  } else {
+  // GSTIN is optional (verification is a trust badge); if given, it must be well-formed.
+  if (a.hasGstin && a.gstin.trim()) {
     const g = validateGstinFormat(a.gstin);
     if (!g.valid) e.gstin = g.error;
   }

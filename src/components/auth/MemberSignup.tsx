@@ -9,9 +9,6 @@ import { Button, Field, Notice } from "@/components/ui/kit";
 import { useAuth } from "@/lib/auth-context";
 import { continueWithGoogle, friendlyAuthError, registerMember } from "@/lib/auth/accountActions";
 import { homeFor, type MemberRole } from "@/lib/auth/policy";
-import { validateGstinFormat } from "@/lib/auth/gstin";
-import { draftKey } from "@/components/auth/ApplicationForms";
-import type { User } from "firebase/auth";
 
 const COPY: Record<MemberRole, { title: string; subtitle: string; nameLabel: string; steps: string[] }> = {
   brand: {
@@ -20,8 +17,8 @@ const COPY: Record<MemberRole, { title: string; subtitle: string; nameLabel: str
     nameLabel: "Your name (business contact)",
     steps: [
       "Create your account and verify your email",
-      "Verify your GSTIN and business details (mandatory)",
-      "Our team reviews your application — usually within 2 business days",
+      "Post your first brief and get matched with AI creators",
+      "Optional: verify your business (GSTIN) for a trusted-brand badge",
     ],
   },
   creator: {
@@ -46,28 +43,6 @@ export function MemberSignup({ role }: { role: MemberRole }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [agreed, setAgreed] = useState(false);
-  // Brands: GSTIN is mandatory and collected up front.
-  const [legalName, setLegalName] = useState("");
-  const [gstin, setGstin] = useState("");
-  const gstinCheck = gstin ? validateGstinFormat(gstin) : null;
-
-  function brandFieldsError(): string | null {
-    if (role !== "brand") return null;
-    if (legalName.trim().length < 2) return "Enter your business legal name as registered for GST.";
-    if (!gstinCheck?.valid) return gstinCheck ? `GSTIN: ${gstinCheck.error}` : "GSTIN is required for brand accounts.";
-    return null;
-  }
-
-  /** Pre-fill the verification application with what was entered here (device-local draft). */
-  function saveBrandDraft(u: User) {
-    if (role !== "brand" || !gstinCheck?.valid) return;
-    try {
-      localStorage.setItem(
-        draftKey(u.uid, "brand"),
-        JSON.stringify({ application: { contactName: name.trim(), legalName: legalName.trim(), hasGstin: true, gstin: gstinCheck.normalized, country: "IN" }, evidence: [] })
-      );
-    } catch { /* ignore */ }
-  }
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -76,12 +51,10 @@ export function MemberSignup({ role }: { role: MemberRole }) {
     setError("");
     if (password !== confirm) return setError("Passwords don't match.");
     if (!agreed) return setError("Please accept the Terms and Privacy Notice to continue.");
-    const brandErr = brandFieldsError();
-    if (brandErr) return setError(brandErr);
     setBusy(true);
     try {
-      saveBrandDraft(await registerMember({ role, displayName: name, email, password }));
-      router.push("/verify-email");
+      await registerMember({ role, displayName: name, email, password });
+      router.push(role === "brand" ? "/brand" : "/creator");
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {
@@ -92,12 +65,10 @@ export function MemberSignup({ role }: { role: MemberRole }) {
   async function handleGoogle() {
     setError("");
     if (!agreed) return setError("Please accept the Terms and Privacy Notice to continue.");
-    const brandErr = brandFieldsError();
-    if (brandErr) return setError(brandErr);
     setBusy(true);
     try {
-      saveBrandDraft(await continueWithGoogle(role));
-      router.push(role === "brand" ? "/brand/verification" : "/creator/verification");
+      await continueWithGoogle(role);
+      router.push(role === "brand" ? "/brand" : "/creator");
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {
@@ -139,7 +110,7 @@ export function MemberSignup({ role }: { role: MemberRole }) {
                 <Notice tone="info" title={`You're signed in as ${user.email}`}>
                   This account is already registered{account.role ? ` as a ${account.role}` : ""}. One account holds one role.
                 </Notice>
-                <Button variant="forest" href={homeFor(account.principal, account.status, account.emailVerified)} className="w-full justify-center">
+                <Button variant="forest" href={homeFor(account.principal)} className="w-full justify-center">
                   Continue to your portal
                 </Button>
               </div>
@@ -153,30 +124,6 @@ export function MemberSignup({ role }: { role: MemberRole }) {
                   <Field label={role === "brand" ? "Work email" : "Email"} required>
                     <input className="kl-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
                   </Field>
-                  {role === "brand" && (
-                    <>
-                      <Field label="Business legal name" hint="As on your GST registration" required>
-                        <input className="kl-input" value={legalName} onChange={(e) => setLegalName(e.target.value)} required minLength={2} maxLength={120} autoComplete="organization" />
-                      </Field>
-                      <Field label="GSTIN" hint="Required for all brands" required>
-                        <input
-                          className="kl-input font-mono uppercase"
-                          value={gstin}
-                          onChange={(e) => setGstin(e.target.value.toUpperCase().replace(/\s/g, ""))}
-                          maxLength={15}
-                          placeholder="22AAAAA0000A1Z5"
-                          required
-                        />
-                        {gstinCheck && (
-                          <span className={`mt-1 block text-[11px] font-medium ${gstinCheck.valid ? "text-forest-700" : "text-rose-600"}`}>
-                            {gstinCheck.valid
-                              ? `✓ Valid GSTIN format (${gstinCheck.stateName}). We confirm registration on the GST portal before approval.`
-                              : gstinCheck.error}
-                          </span>
-                        )}
-                      </Field>
-                    </>
-                  )}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Password" hint="8+ characters" required>
                       <input className="kl-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} autoComplete="new-password" />

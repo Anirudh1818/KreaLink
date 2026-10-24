@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { canPerform } from "@/lib/auth/policy";
 
 const CARDS = [
+  { href: "/creator/jobs", title: "Find jobs", body: "Browse briefs brands have posted and apply with a pitch." },
   { href: "/join-creator", title: "Public profile", body: "Your discoverable profile, AI stack and showreel." },
   { href: "/creator-studio?tab=engagements", title: "Opportunities & engagements", body: "Invitations from brands, active projects and stages." },
   { href: "/creator-studio", title: "Submissions & revisions", body: "Upload deliverables, run delivery checks, track v1/v2/v3." },

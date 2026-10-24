@@ -54,6 +54,7 @@ import { PortalAccessBanner, RestrictedNotice } from "@/components/auth/AccountU
 import { AgentReview, NextStepBanner, SelectionPanel } from "@/components/pipeline/PipelineUI";
 import { RatingSummary, ReviewForm } from "@/components/reviews/ReviewUI";
 import { useAllReviews } from "@/lib/reviews/store";
+import { BrandApplicants } from "@/components/jobs/BrandApplicants";
 
 type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "pipeline" | "profile";
 
@@ -227,6 +228,7 @@ export default function BrandDashboardPage() {
     notes: "",
   });
   const [isSavingBrief, setIsSavingBrief] = useState(false);
+  const [jobNotice, setJobNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Invitations & Engagements State
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -259,6 +261,16 @@ export default function BrandDashboardPage() {
           } else if (user?.uid) {
             const vSnap = await getDoc(doc(db, "verifications", user.uid)).catch(() => null);
             const vApp = vSnap?.data()?.application;
+            // Older brand accounts may lack their workspace doc; posting jobs needs it.
+            // (Rules only allow this for brand accounts; anything else is ignored.)
+            await setDoc(doc(db, "brands", brandId), {
+              id: brandId,
+              ownerUid: user.uid,
+              name: user.displayName || user.email?.split("@")[0] || "My Brand",
+              industry: "",
+              description: "",
+              createdAt: serverTimestamp(),
+            }).catch(() => {});
             setBrand({
               id: brandId,
               ownerUid: user.uid,
@@ -356,16 +368,8 @@ export default function BrandDashboardPage() {
               }));
             }
           } else {
-            const briefsSnap = await getDocs(collection(db, "briefs"));
-            if (!briefsSnap.empty) {
-              loadedBriefs = briefsSnap.docs.map((b) => ({
-                id: b.id,
-                ...(b.data() as unknown as CreativeBrief),
-              }));
-            }
-            if (loadedBriefs.length === 0) {
-              loadedBriefs = DEMO_BRIEFS;
-            }
+            // Visitors get the demo workspace only — never other brands' jobs.
+            loadedBriefs = DEMO_BRIEFS;
           }
         } catch {
           // continue
@@ -536,8 +540,9 @@ export default function BrandDashboardPage() {
 
       try {
         await setDoc(doc(db, "briefs", briefId), newBrief, { merge: true });
+        setJobNotice(user ? { ok: true, text: "Job posted — creators can now find it and apply." } : { ok: true, text: "Demo job created on this device. Sign up as a brand to publish jobs." });
       } catch {
-        // Continue locally
+        setJobNotice({ ok: false, text: "Saved on this device only — sign in with a brand account to publish this job to creators." });
       }
 
       setBriefs((prev) => [newBrief, ...prev]);
@@ -1190,6 +1195,12 @@ export default function BrandDashboardPage() {
                 </button>
               </div>
             </div>
+
+            {jobNotice && (
+              <div className={`rounded-2xl border px-4 py-3 text-xs font-semibold ${jobNotice.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+                {jobNotice.text}
+              </div>
+            )}
 
             {/* Robustness: contradictory briefs and briefs with no strong match */}
             {briefConflicts.length > 0 && (
@@ -1986,6 +1997,13 @@ export default function BrandDashboardPage() {
               </Link>
             </div>
           </div>
+
+          <BrandApplicants
+            brandUid={user && account.role === "brand" ? user.uid : null}
+            brandName={brand.name}
+            briefs={briefs}
+            selectedBriefId={selectedBriefId}
+          />
 
           <div className="kl-card p-5 text-slate-900 space-y-3">
             {r2Engagements.length === 0 ? (

@@ -25,7 +25,7 @@ export default function VerifyEmailPage() {
   // Once verified, continue to the right portal step.
   useEffect(() => {
     if (user && account.ready && account.emailVerified) {
-      router.replace(homeFor(account.principal, account.status, true));
+      router.replace(homeFor(account.principal));
     }
   }, [user, account, router]);
 

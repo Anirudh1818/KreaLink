@@ -15,6 +15,8 @@ import * as fb from "../src/lib/firebase";
 import * as actions from "../src/lib/auth/accountActions";
 import * as route from "../src/app/api/verification/gstin/route";
 import type { VerificationDoc } from "../src/lib/auth/schema";
+import * as jobs from "../src/lib/jobs/store";
+import { brandIdForUid } from "../src/lib/auth/policy";
 
 const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9099";
 const FS_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8080";
@@ -224,5 +226,63 @@ describe("end-to-end", { concurrency: false }, () => {
     const r = await provision("revoke", ADMIN.email, "--by", "E2E test");
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /last active admin/);
+  });
+
+  it("demo flow: brand posts a job, creator applies, brand shortlists — no GSTIN, no verification", async () => {
+    // Brand: sign up (no GSTIN, email not verified) and post a job right away.
+    await m.fauth.signOut(m.fb.auth);
+    await m.actions.registerMember({ role: "brand", displayName: "Demo Brand", email: "demo-brand@krealink.example", password: "demo-brand-123" });
+    const brandUid = m.fb.auth.currentUser!.uid;
+    assert.equal(m.fb.auth.currentUser!.emailVerified, false);
+    const job = {
+      id: "job-demo-1", brandId: brandIdForUid(brandUid), ownerUid: brandUid, brandName: "Demo Brand",
+      campaignName: "15s vertical serum reel", requirements: "Premium 15-second vertical product video for Instagram Reels.",
+      contentType: "Short-form Video (Reels/TikTok)", style: ["Minimalist"], platform: "Instagram Reels", aspectRatio: "9:16 Vertical",
+      targetAudience: "Gen Z", deliverables: ["1x 15s reel"], commercialUse: true, status: "Published" as const,
+      createdAt: m.fstore.serverTimestamp(), updatedAt: m.fstore.serverTimestamp(),
+    };
+    await m.fstore.setDoc(m.fstore.doc(m.fb.db, "briefs", job.id), job);
+
+    // Creator: sign up, publish a profile (as join-creator does), find the job and apply.
+    await m.fauth.signOut(m.fb.auth);
+    await m.actions.registerMember({ role: "creator", displayName: "Demo Creator", email: "demo-creator@krealink.example", password: "demo-creator-123" });
+    const creatorUid = m.fb.auth.currentUser!.uid;
+    const batch = m.fstore.writeBatch(m.fb.db);
+    batch.set(m.fstore.doc(m.fb.db, "creators", "democreator"), {
+      ownerUid: creatorUid, name: "Demo Creator", username: "democreator", bio: "AI product films", specialization: "Product Visualization",
+      skills: [], aiTools: ["Runway"], aiModels: [], contentTypes: ["Short-form Video (Reels/TikTok)"], formats: ["9:16"],
+      commercialUse: true, availability: "Open to Work",
+    });
+    batch.update(m.fstore.doc(m.fb.db, "users", creatorUid), { creatorUsername: "democreator", updatedAt: m.fstore.serverTimestamp() });
+    await batch.commit();
+    const open = await m.fstore.getDocs(m.fstore.query(m.fstore.collection(m.fb.db, "briefs"), m.fstore.where("status", "==", "Published")));
+    assert.ok(open.docs.some((d) => d.id === job.id), "creator sees the posted job");
+    await jobs.applyToJob({
+      job: { ...job, source: "platform", postedAt: 0 } as jobs.Job,
+      creatorUid, creatorUsername: "democreator", creatorName: "Demo Creator",
+      pitch: "I shoot vertical product reels every week — here's my approach.",
+    });
+
+    // Brand: sees the applicant and shortlists them.
+    await signIn("demo-brand@krealink.example", "demo-brand-123");
+    const apps = await m.fstore.getDocs(m.fstore.query(m.fstore.collection(m.fb.db, "applications"), m.fstore.where("brandOwnerUid", "==", brandUid)));
+    assert.equal(apps.size, 1);
+    const d = apps.docs[0]!;
+    const app: jobs.JobApplication = { ...(d.data() as jobs.JobApplication), id: d.id, createdAt: 0, source: "platform" };
+    await jobs.decideApplication(app, "shortlisted", { brandUid, brandName: "Demo Brand" });
+    const after = await m.fstore.getDoc(m.fstore.doc(m.fb.db, "applications", d.id));
+    assert.equal(after.data()?.status, "shortlisted");
+
+    // The brand opens the shared pipeline engagement with the creator (synced to their studio).
+    await m.fstore.setDoc(m.fstore.doc(m.fb.db, "pipelineEngagements", `${job.id}-democreator`), {
+      id: `${job.id}-democreator`, briefId: job.id, creatorId: "democreator", stage: "shortlisted", history: [],
+      brandOwnerUid: brandUid, creatorOwnerUid: creatorUid, versions: [], createdAt: 1, updatedAt: 1,
+    });
+
+    // Creator sees it and can accept — no verification badge needed.
+    await signIn("demo-creator@krealink.example", "demo-creator-123");
+    const ref_ = m.fstore.doc(m.fb.db, "pipelineEngagements", `${job.id}-democreator`);
+    assert.equal((await m.fstore.getDoc(ref_)).data()?.creatorOwnerUid, creatorUid);
+    await m.fstore.updateDoc(ref_, { stage: "accepted", updatedAt: 2 });
   });
 });

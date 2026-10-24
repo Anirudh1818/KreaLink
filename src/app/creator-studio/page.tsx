@@ -60,6 +60,11 @@ export default function CreatorStudioPage() {
   // 1. Load creator document, portfolio, and invitations
   useEffect(() => {
     async function loadCreatorData() {
+      // Deep links (e.g. ?tab=engagements) work for visitors and signed-in creators alike.
+      if (typeof window !== "undefined") {
+        const tabParam = new URLSearchParams(window.location.search).get("tab");
+        if (tabParam === "engagements" || tabParam === "licensing" || tabParam === "reviews") setActiveTab(tabParam);
+      }
       try {
         let targetUser = "";
       if (user?.uid) {
@@ -112,8 +117,6 @@ export default function CreatorStudioPage() {
         if (typeof window !== "undefined") {
           const urlParams = new URLSearchParams(window.location.search);
           const creatorQuery = urlParams.get("creator");
-          const tabParam = urlParams.get("tab");
-        if (tabParam === "engagements" || tabParam === "licensing" || tabParam === "reviews") setActiveTab(tabParam);
           const localStored =
             localStorage.getItem("krealink-current-creator") ||
             null;

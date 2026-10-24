@@ -41,7 +41,7 @@ function LoginInner() {
       router.replace("/choose-role?setup=1");
       return;
     }
-    const target = next && decideRoute(next, account.principal, account.status).allow ? next : homeFor(account.principal, account.status, account.emailVerified);
+    const target = next && decideRoute(next, account.principal).allow ? next : homeFor(account.principal);
     router.replace(target);
   }, [user, account, next, router]);
 

@@ -41,7 +41,7 @@ const EMPTY_BRAND: BrandApplication = {
   country: "IN",
   website: "",
   representative: { name: "", designation: "", email: "" },
-  hasGstin: true,
+  hasGstin: false,
   gstin: "",
   altEvidenceType: "",
   registrationNumber: "",
@@ -64,6 +64,11 @@ const EMPTY_CREATOR: CreatorApplication = {
 };
 
 // Drafts stay on this device only; nothing is sent until you submit.
+const COUNTRY_OPTIONS: [string, string][] = [
+  ["IN", "India"], ["US", "United States"], ["GB", "United Kingdom"], ["AE", "United Arab Emirates"],
+  ["SG", "Singapore"], ["DE", "Germany"], ["FR", "France"], ["AU", "Australia"], ["CA", "Canada"],
+];
+
 export function draftKey(uid: string, role: MemberRole) {
   return `krealink-application-draft-${role}-${uid}`;
 }
@@ -322,8 +327,10 @@ function BrandFields({ a, set, e }: { a: BrandApplication; set: (a: BrandApplica
               {Object.entries(BUSINESS_TYPES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>
-          <Field label="Country" hint="GST-registered Indian businesses only">
-            <input className="kl-input bg-[#f3f6f5]" value="India" readOnly aria-readonly="true" />
+          <Field label="Country" required>
+            <select className="kl-input" value={a.country} onChange={(x) => set({ ...a, country: x.target.value })}>
+              {COUNTRY_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
             <Err e={e} k="country" />
           </Field>
           <Field label="Website" hint="Optional" className="sm:col-span-2">
@@ -355,16 +362,19 @@ function BrandFields({ a, set, e }: { a: BrandApplication; set: (a: BrandApplica
       </Section>
 
       <Section
-        title="GST registration (required)"
-        hint="Every brand on KreaLink must be GST-registered. Our team checks your GSTIN, status and legal name against the official GST portal before approval."
+        title="GST registration (optional)"
+        hint="Add your GSTIN if you have one — our team checks it on the official GST portal before awarding the Verified badge. You can post jobs without it."
       >
-        <Field label="GSTIN" required>
+        <Field label="GSTIN" hint="Optional">
           <input
             className="kl-input font-mono uppercase"
             value={a.gstin}
             maxLength={15}
             placeholder="22AAAAA0000A1Z5"
-            onChange={(x) => set({ ...a, hasGstin: true, gstin: x.target.value.toUpperCase().replace(/\s/g, "") })}
+            onChange={(x) => {
+              const gstin = x.target.value.toUpperCase().replace(/\s/g, "");
+              set({ ...a, hasGstin: gstin.length > 0, gstin });
+            }}
           />
           <Err e={e} k="gstin" />
           <div className="mt-2">

@@ -51,13 +51,15 @@ service cloud.firestore {
         && get(docPath('users', me())).data.role == r;
     }
 
-    // Verified member of role r whose account is not suspended.
-    function isVerified(r) {
-      return hasRole(r)
-        && emailVerified()
-        && exists(docPath('verifications', me()))
-        && get(docPath('verifications', me())).data.status == 'verified'
-        && get(docPath('verifications', me())).data.role == r;
+    function notSuspended() {
+      return !exists(docPath('verifications', me()))
+        || get(docPath('verifications', me())).data.status != 'suspended';
+    }
+
+    // Commercial actions need the right role and an account that isn't suspended.
+    // Verification (the badge) is optional and does not gate posting or hiring.
+    function canTransact(r) {
+      return hasRole(r) && notSuspended();
     }
 
     function str(v, min, max) {
@@ -164,16 +166,16 @@ service cloud.firestore {
           && str(a.legalName, 2, 120)
           && str(a.tradeName, 2, 120)
           && a.businessType in ['private_limited', 'public_limited', 'llp', 'partnership', 'sole_proprietorship', 'agency', 'other']
-          && a.country == 'IN'
+          && a.country is string && a.country.matches('^[A-Z]{2}$')
           && optStr(a.website, 300)
           && a.representative is map
           && a.representative.keys().hasOnly(['name', 'designation', 'email'])
           && str(a.representative.name, 2, 120)
           && str(a.representative.designation, 2, 120)
           && str(a.representative.email, 3, 254)
-          // GSTIN is mandatory for brands.
-          && a.hasGstin == true
-          && a.gstin is string && a.gstin.matches('^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$');
+          // GSTIN optional; when provided it must be well-formed.
+          && a.hasGstin is bool
+          && (!a.hasGstin || (a.gstin is string && a.gstin.matches('^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')));
       }
 
       function validCreatorApp(a) {
@@ -364,8 +366,12 @@ service cloud.firestore {
       }
 
       allow read: if true;
-      allow create: if isAdmin() || ownsBrand(request.resource.data.brandId);
-      allow update: if isAdmin() || (ownsBrand(resource.data.brandId) && request.resource.data.brandId == resource.data.brandId);
+      allow create: if isAdmin() || (ownsBrand(request.resource.data.brandId) && request.resource.data.ownerUid == me());
+      allow update: if isAdmin() || (
+        ownsBrand(resource.data.brandId)
+        && request.resource.data.brandId == resource.data.brandId
+        && request.resource.data.ownerUid == resource.data.ownerUid
+      );
       allow delete: if isAdmin() || ownsBrand(resource.data.brandId);
     }
 
@@ -384,7 +390,7 @@ service cloud.firestore {
       allow read: if isAdmin() || isBrandSide() || isCreatorSide();
 
       allow create: if isAdmin() || (
-        isVerified('brand')
+        canTransact('brand')
         && request.resource.data.status == 'Invited'
         && request.resource.data.ownerUid == me()
         && request.resource.data.brandOwnerUid == me()
@@ -403,13 +409,13 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
           && (
             request.resource.data.status == 'Declined'
-            || (request.resource.data.status == 'Accepted' && isVerified('creator'))
+            || (request.resource.data.status == 'Accepted' && canTransact('creator'))
           )
         )
         // Brand edits proposal details while still pending.
         || (
           isBrandSide()
-          && isVerified('brand')
+          && canTransact('brand')
           && resource.data.status == 'Invited'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'campaignTitle', 'contentType', 'updatedAt'])
         );
@@ -422,8 +428,8 @@ service cloud.firestore {
     // ------------------------------------------------------------------------
     match /engagements/{engagementId} {
       function participant(data) {
-        return (data.get('brandOwnerUid', null) == me() && isVerified('brand'))
-          || (data.get('creatorOwnerUid', null) == me() && isVerified('creator'));
+        return (data.get('brandOwnerUid', null) == me() && canTransact('brand'))
+          || (data.get('creatorOwnerUid', null) == me() && canTransact('creator'));
       }
 
       allow read: if isAdmin() || (
@@ -459,16 +465,11 @@ service cloud.firestore {
     // brand and one creator (versions embedded). Mirrors src/lib/r2.
     // ------------------------------------------------------------------------
     match /pipelineEngagements/{engId} {
-      function notSuspended() {
-        return !exists(docPath('verifications', me()))
-          || get(docPath('verifications', me())).data.status != 'suspended';
-      }
-
       // Creator moves that commit to paid work need a verified creator.
       function creatorStageOk() {
         return request.resource.data.stage == resource.data.stage
           || !(request.resource.data.stage in ['accepted', 'production', 'delivered'])
-          || isVerified('creator');
+          || canTransact('creator');
       }
 
       function ownersUnchanged() {
@@ -483,7 +484,7 @@ service cloud.firestore {
         signedIn() && (resource.data.brandOwnerUid == me() || resource.data.creatorOwnerUid == me())
       );
 
-      allow create: if isVerified('brand')
+      allow create: if canTransact('brand')
         && request.resource.data.id == engId
         && request.resource.data.brandOwnerUid == me()
         && request.resource.data.creatorOwnerUid is string
@@ -495,11 +496,56 @@ service cloud.firestore {
       allow update: if ownersUnchanged()
         && request.resource.data.versions is list
         && (
-          (resource.data.brandOwnerUid == me() && isVerified('brand'))
-          || (resource.data.creatorOwnerUid == me() && hasRole('creator') && notSuspended() && creatorStageOk())
+          (resource.data.brandOwnerUid == me() && canTransact('brand'))
+          || (resource.data.creatorOwnerUid == me() && hasRole('creator') && creatorStageOk())
         );
 
       allow delete: if isAdmin() || (signedIn() && resource.data.brandOwnerUid == me());
+    }
+
+    // ------------------------------------------------------------------------
+    // applications/{briefId_creatorUid} — creator applies to a posted job.
+    // One application per creator per job; only the posting brand decides.
+    // ------------------------------------------------------------------------
+    match /applications/{appId} {
+      function app() {
+        return request.resource.data;
+      }
+
+      allow read: if isAdmin() || (
+        signedIn() && (resource.data.creatorUid == me() || resource.data.brandOwnerUid == me())
+      );
+
+      allow create: if canTransact('creator')
+        && app().keys().hasOnly(['briefId', 'briefTitle', 'brandOwnerUid', 'creatorUid', 'creatorUsername', 'creatorName',
+                                 'pitch', 'status', 'createdAt', 'updatedAt'])
+        && appId == app().briefId + '_' + me()
+        && app().creatorUid == me()
+        && app().status == 'applied'
+        && str(app().pitch, 10, 1000)
+        && str(app().creatorName, 1, 120)
+        && str(app().briefTitle, 1, 160)
+        && app().createdAt == request.time
+        && app().updatedAt == request.time
+        && exists(docPath('briefs', app().briefId))
+        && get(docPath('briefs', app().briefId)).data.get('ownerUid', null) == app().brandOwnerUid
+        && exists(docPath('creators', app().creatorUsername))
+        && get(docPath('creators', app().creatorUsername)).data.get('ownerUid', null) == me();
+
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && (
+          // Posting brand shortlists or declines a pending application.
+          (resource.data.brandOwnerUid == me() && canTransact('brand')
+            && resource.data.status == 'applied'
+            && request.resource.data.status in ['shortlisted', 'declined'])
+          // Creator withdraws while still pending.
+          || (resource.data.creatorUid == me()
+            && resource.data.status == 'applied'
+            && request.resource.data.status == 'withdrawn')
+        );
+
+      allow delete: if isAdmin();
     }
 
     // ------------------------------------------------------------------------
@@ -518,7 +564,7 @@ service cloud.firestore {
 
       allow read: if true;
 
-      allow create: if isVerified('brand')
+      allow create: if canTransact('brand')
         && request.resource.data.keys().hasOnly(['engagementId', 'creatorUsername', 'brandName', 'brandOwnerUid',
                                                  'campaignTitle', 'comment', 'rating', 'quality', 'communication',
                                                  'timeliness', 'createdAt'])

@@ -59,14 +59,18 @@ describe("verification state machine", () => {
 
 describe("restricted actions (scenarios 8, 12)", () => {
   const base: AccessSnapshot = { signedIn: true, emailVerified: true, role: "brand", status: "verified" };
-  it("verified brand may invite", () => assert.ok(canPerform("brand.sendInvitation", base).allowed));
-  it("unverified, pending, rejected and suspended brands may not", () => {
-    for (const status of ["unverified", "pending_review", "rejected", "suspended", "info_required"] as VerificationStatus[]) {
-      assert.equal(canPerform("brand.sendInvitation", { ...base, status }).allowed, false, status);
+  it("any non-suspended brand may post and invite (verification is a badge)", () => {
+    for (const status of ["verified", "unverified", "pending_review", "rejected", "info_required"] as VerificationStatus[]) {
+      assert.equal(canPerform("brand.sendInvitation", { ...base, status }).allowed, true, status);
     }
+    assert.equal(canPerform("brand.sendInvitation", { ...base, emailVerified: false, status: "unverified" }).allowed, true);
   });
-  it("unverified email blocks even a verified status", () => {
-    assert.equal(canPerform("brand.sendInvitation", { ...base, emailVerified: false }).allowed, false);
+  it("suspended accounts are blocked (scenario 12)", () => {
+    assert.equal(canPerform("brand.sendInvitation", { ...base, status: "suspended" }).allowed, false);
+    assert.equal(canPerform("creator.acceptInvitation", { ...base, role: "creator", status: "suspended" }).allowed, false);
+  });
+  it("signed-out users are blocked", () => {
+    assert.equal(canPerform("brand.sendInvitation", { ...base, signedIn: false }).allowed, false);
   });
   it("roles cannot use each other's actions", () => {
     assert.equal(canPerform("creator.acceptInvitation", base).allowed, false);
@@ -81,8 +85,8 @@ describe("routing (scenarios 4, 5)", () => {
   const anon = { kind: "anonymous" } as const;
 
   it("brand is kept out of creator and admin portals", () => {
-    assert.deepEqual(decideRoute("/creator", brand, "verified"), { allow: false, redirectTo: "/brand" });
-    assert.deepEqual(decideRoute("/creator-studio", brand, "verified"), { allow: false, redirectTo: "/brand" });
+    assert.deepEqual(decideRoute("/creator", brand), { allow: false, redirectTo: "/brand" });
+    assert.deepEqual(decideRoute("/creator-studio", brand), { allow: false, redirectTo: "/brand" });
     assert.deepEqual(decideRoute("/admin/verifications", brand), { allow: false, redirectTo: "/admin/access" });
     assert.deepEqual(decideRoute("/brand/verification", brand), { allow: true });
   });
@@ -92,18 +96,22 @@ describe("routing (scenarios 4, 5)", () => {
       assert.deepEqual(decideRoute(path, admin), { allow: false, redirectTo: "/admin" }, `admin → ${path}`);
     }
     assert.deepEqual(decideRoute("/pipeline", creator), { allow: false, redirectTo: "/creator" });
-    assert.deepEqual(decideRoute("/join-creator", brand, "verified"), { allow: false, redirectTo: "/brand" });
-    assert.deepEqual(decideRoute("/pipeline", brand, "verified"), { allow: true });
+    assert.deepEqual(decideRoute("/join-creator", brand), { allow: false, redirectTo: "/brand" });
+    assert.deepEqual(decideRoute("/pipeline", brand), { allow: true });
     assert.deepEqual(decideRoute("/join-creator", creator), { allow: true });
     // Anonymous visitors can still browse the demo workspaces.
     assert.deepEqual(decideRoute("/pipeline", anon), { allow: true });
   });
 
-  it("brands must be GSTIN-verified before using the Brand Hub", () => {
-    for (const s of ["unverified", "pending_review", "info_required", "rejected", "suspended"] as VerificationStatus[]) {
-      assert.deepEqual(decideRoute("/brand", brand, s), { allow: false, redirectTo: "/brand/verification" }, s);
-    }
-    assert.deepEqual(decideRoute("/brand", brand, "verified"), { allow: true });
+  it("brands use the Brand Hub right after signup (no GSTIN gate)", () => {
+    assert.deepEqual(decideRoute("/brand", brand), { allow: true });
+    assert.deepEqual(decideRoute("/brand/verification", brand), { allow: true });
+  });
+
+  it("creators can browse and apply to jobs; brands can't open the creator job board", () => {
+    assert.deepEqual(decideRoute("/creator/jobs", creator), { allow: true });
+    assert.deepEqual(decideRoute("/creator/jobs", brand), { allow: false, redirectTo: "/brand" });
+    assert.deepEqual(decideRoute("/creator/jobs", anon), { allow: true });
   });
 
   it("creator is kept out of brand and admin portals", () => {
@@ -126,11 +134,11 @@ describe("routing (scenarios 4, 5)", () => {
     assert.deepEqual(decideRoute("/creator/verification", anon), { allow: false, redirectTo: "/login?next=/creator/verification" });
   });
 
-  it("post-sign-in home follows role and verification state", () => {
-    assert.equal(homeFor(admin, "unverified", true), "/admin");
-    assert.equal(homeFor(brand, "verified", false), "/verify-email");
-    assert.equal(homeFor(brand, "pending_review", true), "/brand/verification");
-    assert.equal(homeFor(creator, "verified", true), "/creator");
+  it("post-sign-in home goes straight to the role's portal", () => {
+    assert.equal(homeFor(admin), "/admin");
+    assert.equal(homeFor(brand), "/brand");
+    assert.equal(homeFor(creator), "/creator");
+    assert.equal(homeFor(anon), "/login");
   });
 
   it("rejects open redirects in ?next=", () => {
@@ -187,10 +195,10 @@ describe("application validators", () => {
     assert.ok(validateBrandApplication({ ...brand, gstin: "27AAPFU0939F1ZA" }, []).gstin);
   });
 
-  it("GSTIN is mandatory for brands; non-Indian brands are refused", () => {
-    assert.ok(validateBrandApplication({ ...brand, hasGstin: false, gstin: "" }, []).gstin);
-    assert.ok(validateBrandApplication({ ...brand, gstin: "" }, []).gstin);
-    assert.ok(validateBrandApplication({ ...brand, country: "US" }, []).country);
+  it("GSTIN is optional for brands (any country); if given it must be valid", () => {
+    assert.deepEqual(validateBrandApplication({ ...brand, hasGstin: false, gstin: "" }, []), {});
+    assert.deepEqual(validateBrandApplication({ ...brand, hasGstin: false, gstin: "", country: "US" }, []), {});
+    assert.ok(validateBrandApplication({ ...brand, gstin: "27AAPFU0939F1ZA" }, []).gstin);
   });
 
   it("creator without GSTIN is valid (scenario 11)", () => {
