@@ -19,6 +19,7 @@ import {
   type VerificationStatus,
 } from "./auth/policy";
 import type { AdminDoc, UserDoc, VerificationDoc } from "./auth/schema";
+import { startPipelineSync } from "./r2/firestoreSync";
 
 export type AuthUser = {
   uid: string;
@@ -172,6 +173,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       needsRoleSetup: ready && !grant && !role,
     };
   }, [fbUser, loading, emailVerified, hasSecondFactor, userDoc, adminDoc, verification]);
+
+  // Shared brand↔creator engagements sync through Firestore for signed-in members.
+  const syncUid = account.ready && !account.isAdmin && account.role ? fbUser?.uid ?? null : null;
+  const syncRole = account.role;
+  useEffect(() => {
+    if (!syncUid || !syncRole) return;
+    return startPipelineSync(syncUid, syncRole);
+  }, [syncUid, syncRole]);
 
   const user = useMemo<AuthUser | null>(
     () => (fbUser ? { uid: fbUser.uid, email: fbUser.email, displayName: fbUser.displayName, photoURL: fbUser.photoURL } : null),

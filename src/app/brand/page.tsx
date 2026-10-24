@@ -30,10 +30,14 @@ import { rankCreatorsForBrief2, MatchResult2 } from "@/lib/ai/matchingEngine2";
 import { BriefReadiness, ClarificationQuestion, StructuredBrief2 } from "@/lib/ai/schemas";
 import { DEMO_BRAND, DEMO_BRIEFS, DEMO_CREATORS } from "@/lib/demoData";
 import {
-  CREATOR_LICENSE_OFFERS,
   PIPELINE_STAGES,
   STAGE_LABEL,
-  acceptAllAndApply,
+  applyAgentDecisions,
+  detectBriefConflicts,
+  getAgentResult,
+  registerCreatorOffers,
+  offerSource,
+  STRONG_MATCH_THRESHOLD,
   compareLicensesForBrief,
   getEngagementsForBrief,
   getLatestVersion,
@@ -47,6 +51,7 @@ import {
 import { useR2Revision } from "@/lib/r2/useR2";
 import { canPerform } from "@/lib/auth/policy";
 import { PortalAccessBanner, RestrictedNotice } from "@/components/auth/AccountUI";
+import { AgentReview, NextStepBanner, SelectionPanel } from "@/components/pipeline/PipelineUI";
 
 type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "pipeline" | "profile";
 
@@ -125,15 +130,34 @@ export default function BrandDashboardPage() {
   );
 
   // Auto-Shortlist Agent
-  const [agentResult, setAgentResult] = useState<AgentShortlistResult | null>(null);
+  // Stored result is the source of truth so brand decisions survive reloads.
+  const agentResult = useMemo<AgentShortlistResult | null>(
+    () => (r2Revision ? getAgentResult(selectedBriefId) ?? null : null),
+    [r2Revision, selectedBriefId]
+  );
   const [showShortlistOnly, setShowShortlistOnly] = useState(false);
+  const [selectingEngId, setSelectingEngId] = useState<string | null>(null);
+  const briefConflicts = useMemo(() => (selectedBrief ? detectBriefConflicts(selectedBrief) : []), [selectedBrief]);
+
+  /** Owner ids let engagements with real creator accounts sync across devices. */
+  function engagementOwners(creatorId: string) {
+    const c = creators.find((x) => x.username.toLowerCase() === creatorId.toLowerCase());
+    return {
+      brandOwnerUid: user && account.role === "brand" ? user.uid : undefined,
+      creatorOwnerUid: c?.ownerUid,
+    };
+  }
 
   function handleRunAutoShortlist() {
     if (!selectedBrief) return;
     const result = runAutoShortlistForBrief(selectedBrief, creators);
-    setAgentResult(acceptAllAndApply(result, selectedBrief));
-    setShowShortlistOnly(true);
     setSelectedMatchUsername(result.actions[0]?.creatorId ?? null);
+  }
+
+  function handleApplyAgent() {
+    if (!selectedBrief) return;
+    applyAgentDecisions(selectedBriefId, selectedBrief, engagementOwners);
+    setShowShortlistOnly(true);
   }
 
   const visibleMatches = showShortlistOnly
@@ -307,7 +331,9 @@ export default function BrandDashboardPage() {
           }
         }
 
-        setCreators(Array.from(creatorMap.values()));
+        const allCreators = Array.from(creatorMap.values());
+        registerCreatorOffers(allCreators);
+        setCreators(allCreators);
 
         // Load Briefs
         let loadedBriefs: CreativeBrief[] = [];
@@ -580,6 +606,7 @@ export default function BrandDashboardPage() {
           brandName: brand.name,
           matchScore: invitedMatch?.overallScore,
           brief: selectedBrief ?? undefined,
+          ...engagementOwners(invitingCreator.username),
         },
         "brand"
       );
@@ -1155,22 +1182,40 @@ export default function BrandDashboardPage() {
               </div>
             </div>
 
-            {agentResult && agentResult.briefId === selectedBriefId && (
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs">
-                <span className="text-base">🤖</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-emerald-900">{agentResult.summary}</p>
-                  <p className="text-emerald-800/80">
-                    Shortlisted {agentResult.actions.length} creators into the pipeline. {agentResult.nextStep}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("pipeline")}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition"
-                >
-                  View pipeline →
+            {/* Robustness: contradictory briefs and briefs with no strong match */}
+            {briefConflicts.length > 0 && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                <p className="font-bold">⚠ This brief has conflicting requirements — rankings may be unreliable</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {briefConflicts.map((c) => <li key={c}>{c}</li>)}
+                </ul>
+                <button type="button" onClick={() => setActiveTab("create-brief")} className="mt-2 font-semibold underline">
+                  Edit brief
                 </button>
+              </div>
+            )}
+            {matchedResults.length > 0 && matchedResults[0]!.overallScore < STRONG_MATCH_THRESHOLD && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-900">
+                <p className="font-bold">No strong match for this brief</p>
+                <p>
+                  The best creator scores {matchedResults[0]!.overallScore}% (below {STRONG_MATCH_THRESHOLD}%). The closest options are listed
+                  with their gaps — consider broadening style, tools or format.
+                </p>
+              </div>
+            )}
+
+            {agentResult && (
+              <div className="space-y-2">
+                <AgentReview result={agentResult} ranked={matchedResults} onApply={handleApplyAgent} tone="light" />
+                {agentResult.applied && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("pipeline")}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition"
+                  >
+                    View pipeline →
+                  </button>
+                )}
               </div>
             )}
 
@@ -1227,6 +1272,11 @@ export default function BrandDashboardPage() {
                                 {c.name}
                               </h4>
                               <span className="h-2 w-2 rounded-full bg-emerald-500" title="Online now" />
+                              {(match.confidence === "LOW" || match.evidenceCount === 0) && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wide" title="Limited portfolio evidence — verify before contacting">
+                                  Sparse profile
+                                </span>
+                              )}
                               {isShortlisted && (
                                 <span className="px-1.5 py-0.5 rounded-full bg-lime-100 text-lime-800 text-[9px] font-bold uppercase tracking-wide">
                                   Shortlisted
@@ -1474,7 +1524,7 @@ export default function BrandDashboardPage() {
                         </tbody>
                       </table>
 
-                      {!CREATOR_LICENSE_OFFERS[activeInspectMatch.creator.username] && (
+                      {offerSource(activeInspectMatch.creator.username) === "default" && (
                         <p className="text-[10px] text-slate-400">
                           This creator hasn&apos;t published custom terms — showing platform default licence.
                         </p>
@@ -1939,7 +1989,7 @@ export default function BrandDashboardPage() {
                 const latest = getLatestVersion(eng.id);
                 const license = selectedBrief ? compareLicensesForBrief(selectedBrief, eng.creatorId) : null;
                 return (
-                  <div key={eng.id} className="kl-card-soft p-4 flex flex-col lg:flex-row lg:items-center gap-4">
+                  <div key={eng.id} className="kl-card-soft p-4 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-4">
                     <div className="lg:w-56 min-w-0">
                       <p className="text-sm font-bold truncate">{creator?.name ?? `@${eng.creatorId}`}</p>
                       <p className="text-[11px] text-slate-500 truncate">
@@ -1993,12 +2043,18 @@ export default function BrandDashboardPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => stepStage(eng.id, 1)}
+                        onClick={() => (eng.stage === "accepted" ? setSelectingEngId(eng.id) : stepStage(eng.id, 1))}
                         disabled={idx < 0 || idx >= PIPELINE_STAGES.length - 1}
                         className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40"
                       >
-                        Advance →
+                        {eng.stage === "accepted" ? "Select & confirm →" : "Advance →"}
                       </button>
+                    </div>
+                    <div className="w-full basis-full space-y-2">
+                      <NextStepBanner eng={eng} side="brand" tone="light" />
+                      {selectingEngId === eng.id && eng.stage === "accepted" && selectedBrief && (
+                        <SelectionPanel eng={eng} brief={eng.brief ?? selectedBrief} onDone={() => setSelectingEngId(null)} tone="light" />
+                      )}
                     </div>
                   </div>
                 );

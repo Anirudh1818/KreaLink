@@ -17,6 +17,14 @@ export type CreatorProfile = {
   contentTypes: string[];
   formats: string[];
   commercialUse: boolean;
+  /** Licensing terms the creator offers (usage, territory, duration, platforms, exclusivity). */
+  licenseOffer?: {
+    usageType: "commercial" | "editorial" | "internal" | "unlimited";
+    territory: string;
+    duration: string;
+    platforms: string[];
+    exclusivity: "exclusive" | "non-exclusive" | "category-exclusive";
+  };
   availability: string;
   workflow?: string;
   profilePhoto?: string;

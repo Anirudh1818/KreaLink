@@ -25,6 +25,7 @@ export const PIPELINE_STAGES: EngagementStage[] = [
   "shortlisted",
   "contacted",
   "accepted",
+  "selected",
   "production",
   "changes_requested",
   "delivered",
@@ -58,16 +59,40 @@ export type Engagement = {
   history: EngagementUpdate[];
   scope?: string;        // agreed scope text
   timeline?: string;
+  requirements?: string; // confirmed deliverable requirements at selection
   campaignTitle?: string;
   brandName?: string;
   matchScore?: number;
   brief?: CreativeBrief; // snapshot so the creator side can validate against specs
+  agreedLicense?: AgreedLicense; // locked at selection, carried through delivery
+  progress?: ProgressUpdate[];   // production updates visible to the brand
+  brandOwnerUid?: string;        // set when both sides have real accounts →
+  creatorOwnerUid?: string;      //   the engagement syncs through Firestore
   createdAt: number;
   updatedAt: number;
 };
 
+/** Licensing terms agreed when the brand selects the creator. */
+export type AgreedLicense = {
+  terms: LicenseTerm;            // what the brief requires (the agreed grant)
+  creatorOffers: LicenseTerm;    // what the creator offered at the time
+  mismatches: LicenseMismatch[]; // differences acknowledged at selection
+  overrideNote?: string;         // how blocking mismatches were resolved
+  agreedAt: number;
+};
+
+export type ProgressUpdate = {
+  at: number;
+  by: "creator" | "brand";
+  note: string;
+  percent?: number;
+};
+
 /** Optional context captured when an engagement is first created. */
-export type EngagementMeta = Pick<Engagement, "campaignTitle" | "brandName" | "matchScore" | "brief">;
+export type EngagementMeta = Pick<
+  Engagement,
+  "campaignTitle" | "brandName" | "matchScore" | "brief" | "brandOwnerUid" | "creatorOwnerUid"
+>;
 
 /* ------------------------------------------------------------------ */
 /* Versions & revisions                                                */
@@ -84,6 +109,7 @@ export type FeedbackItem = {
   versionId: string;
   at: number;
   by: "brand" | "creator";
+  authorName?: string;   // who asked (shown in version history)
   text: string;
   resolved: boolean;
 };
@@ -100,6 +126,13 @@ export type Version = {
   mediaMeta?: MediaMeta;
   changeLog: string;     // what changed from previous version
   requestedBy?: string;  // name of who requested the revision
+  submittedBy?: string;  // creator handle that made this version
+  respondsTo?: {         // the feedback this version answers (revision rounds)
+    versionN: number;
+    feedback: string;
+    requestedBy: string;
+    requestedAt: number;
+  };
   feedback: FeedbackItem[];
 };
 
@@ -177,8 +210,11 @@ export type AgentAction = {
   score?: number;
   reason?: string;
   status: "pending" | "accepted" | "edited" | "rejected";
-  editedValue?: string;
+  editedValue?: string;   // brand's note when editing
+  originalCreatorId?: string; // set when the brand swapped the agent's pick
 };
+
+export type WeakAlternative = { creatorId: string; score: number; reason: string };
 
 export type AgentShortlistResult = {
   briefId: string;
@@ -186,4 +222,11 @@ export type AgentShortlistResult = {
   summary: string;
   createdAt: number;
   nextStep: string;
+  strongMatchFound?: boolean;          // false → no creator met the threshold
+  weakAlternatives?: WeakAlternative[]; // shown, never auto-proposed
+  conflicts?: string[];                // contradictory brief requirements
+  applied?: boolean;                   // accepted actions written to the pipeline
 };
+
+/** Minimum overall score for the agent to propose a creator. */
+export const STRONG_MATCH_THRESHOLD = 70;

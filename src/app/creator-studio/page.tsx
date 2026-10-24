@@ -26,8 +26,10 @@ import {
 import { DEMO_CREATORS } from "@/lib/demoData";
 import { ActiveEngagements, useActiveEngagementCount } from "./ActiveEngagements";
 import { PortalAccessBanner } from "@/components/auth/AccountUI";
+import { LicenseOfferForm } from "./LicenseOfferForm";
+import { registerCreatorOffers } from "@/lib/r2";
 
-type StudioTab = "overview" | "current-projects" | "engagements" | "portfolio" | "skills" | "earnings";
+type StudioTab = "overview" | "current-projects" | "engagements" | "licensing" | "portfolio" | "skills" | "earnings";
 
 export default function CreatorStudioPage() {
   const { user } = useAuth();
@@ -109,7 +111,8 @@ export default function CreatorStudioPage() {
         if (typeof window !== "undefined") {
           const urlParams = new URLSearchParams(window.location.search);
           const creatorQuery = urlParams.get("creator");
-          if (urlParams.get("tab") === "engagements") setActiveTab("engagements");
+          const tabParam = urlParams.get("tab");
+        if (tabParam === "engagements" || tabParam === "licensing") setActiveTab(tabParam);
           const localStored =
             localStorage.getItem("krealink-current-creator") ||
             null;
@@ -122,7 +125,9 @@ export default function CreatorStudioPage() {
           const creatorSnap = await getDoc(creatorRef);
 
           if (creatorSnap.exists()) {
-            setCreatorProfile(creatorSnap.data() as CreatorProfile);
+            const loaded = creatorSnap.data() as CreatorProfile;
+            registerCreatorOffers([loaded]);
+            setCreatorProfile(loaded);
           } else {
             const found = DEMO_CREATORS.find((c) => c.creator.username.toLowerCase() === targetUser.toLowerCase());
             if (found) {
@@ -325,6 +330,17 @@ export default function CreatorStudioPage() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("licensing")}
+            className={`px-4 py-2 rounded-t-xl transition ${
+              activeTab === "licensing"
+                ? "text-emerald-400 border-b-2 border-emerald-500 font-bold"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Licensing
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("portfolio")}
             className={`px-4 py-2 rounded-t-xl transition ${
               activeTab === "portfolio"
@@ -358,7 +374,9 @@ export default function CreatorStudioPage() {
           </button>
         </div>
 
-        {activeTab === "engagements" ? (
+        {activeTab === "licensing" ? (
+          <LicenseOfferForm key={creatorProfile.username} creatorUsername={creatorProfile.username} ownerUid={creatorProfile.ownerUid} />
+        ) : activeTab === "engagements" ? (
           <ActiveEngagements creatorUsername={creatorProfile.username} />
         ) : (
         <>

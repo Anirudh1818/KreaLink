@@ -3,8 +3,82 @@
  * Brand requirements vs creator offers → mismatch flagging.
  */
 
-import type { LicenseTerm, LicenseMismatch, LicenseComparison } from "./types";
-import type { CreativeBrief } from "@/lib/types";
+import type { AgreedLicense, LicenseTerm, LicenseMismatch, LicenseComparison } from "./types";
+import type { CreativeBrief, CreatorProfile } from "@/lib/types";
+import { notifyR2Change } from "./events";
+
+/* ------------------------------------------------------------------ */
+/* Creator licence offers                                              */
+/* ------------------------------------------------------------------ */
+
+const OFFERS_KEY = "krealink-license-offers";
+
+/** Platform default shown (and labelled) when a creator hasn't set terms. */
+export const DEFAULT_LICENSE_OFFER: LicenseTerm = {
+  usageType: "commercial",
+  territory: "worldwide",
+  duration: "1year",
+  platforms: ["Instagram"],
+  exclusivity: "non-exclusive",
+};
+
+function loadOffers(): Record<string, LicenseTerm> {
+  try {
+    const raw = localStorage.getItem(OFFERS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, LicenseTerm>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveOffers(map: Record<string, LicenseTerm>) {
+  try {
+    localStorage.setItem(OFFERS_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+  notifyR2Change();
+}
+
+export type OfferSource = "creator" | "demo" | "default";
+
+/** Creator-published terms win, then seeded demo terms, then the default. */
+export function getCreatorOffer(creatorId: string): LicenseTerm {
+  return loadOffers()[creatorId.toLowerCase()] ?? CREATOR_LICENSE_OFFERS[creatorId] ?? DEFAULT_LICENSE_OFFER;
+}
+
+export function offerSource(creatorId: string): OfferSource {
+  if (loadOffers()[creatorId.toLowerCase()]) return "creator";
+  return CREATOR_LICENSE_OFFERS[creatorId] ? "demo" : "default";
+}
+
+/** Record the terms a creator offers (local copy; profile doc is updated by the caller). */
+export function saveCreatorOffer(creatorId: string, offer: LicenseTerm) {
+  saveOffers({ ...loadOffers(), [creatorId.toLowerCase()]: offer });
+}
+
+/** Cache offers published on creator profiles loaded from Firestore. */
+export function registerCreatorOffers(creators: Pick<CreatorProfile, "username" | "licenseOffer">[]) {
+  const map = loadOffers();
+  let changed = false;
+  for (const c of creators) {
+    if (c.licenseOffer && c.username) {
+      map[c.username.toLowerCase()] = c.licenseOffer as LicenseTerm;
+      changed = true;
+    }
+  }
+  if (changed) saveOffers(map);
+}
+
+/** Snapshot of the terms agreed at selection; travels with the engagement. */
+export function buildAgreedLicense(brief: CreativeBrief, creatorId: string, overrideNote?: string): AgreedLicense {
+  const cmp = compareLicensesForBrief(brief, creatorId);
+  return {
+    terms: cmp.brandRequires,
+    creatorOffers: cmp.creatorOffers,
+    mismatches: cmp.mismatches,
+    ...(overrideNote?.trim() ? { overrideNote: overrideNote.trim().slice(0, 500) } : {}),
+    agreedAt: Date.now(),
+  };
+}
 
 const KNOWN_PLATFORMS = ["Instagram", "TikTok", "YouTube", "Web", "Broadcast"];
 
@@ -118,13 +192,7 @@ export function compareLicenses(
   creatorId: string,
   brandRequires: LicenseTerm
 ): LicenseComparison {
-  const creatorOffers = CREATOR_LICENSE_OFFERS[creatorId] ?? {
-    usageType: "commercial",
-    territory: "worldwide",
-    duration: "1year",
-    platforms: ["Instagram"],
-    exclusivity: "non-exclusive",
-  };
+  const creatorOffers = getCreatorOffer(creatorId);
 
   const mismatches: LicenseMismatch[] = [];
 

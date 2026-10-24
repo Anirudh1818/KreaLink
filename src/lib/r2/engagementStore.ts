@@ -1,11 +1,21 @@
 /**
  * KreaLink R2 — Engagement Store
- * localStorage-first; Firestore sync attempted as side-effect.
+ * localStorage is the working copy (works for demo visitors). For engagements
+ * between two real accounts, every change is also queued for Firestore and
+ * remote changes are merged back in (see firestoreSync.ts).
  */
 
-import type { Engagement, EngagementMeta, EngagementStage, EngagementUpdate } from "./types";
+import type {
+  AgreedLicense,
+  Engagement,
+  EngagementMeta,
+  EngagementStage,
+  EngagementUpdate,
+  ProgressUpdate,
+} from "./types";
 import { PIPELINE_STAGES } from "./types";
 import { notifyR2Change } from "./events";
+import { queueCloudWrite } from "./cloudQueue";
 
 const LS_KEY = "krealink-engagements";
 
@@ -18,11 +28,22 @@ function load(): Engagement[] {
   }
 }
 
-function save(all: Engagement[]) {
+function save(all: Engagement[], changedId?: string) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(all));
   } catch { /* ignore */ }
   notifyR2Change();
+  if (changedId) queueCloudWrite(changedId);
+}
+
+/** Apply a change to one engagement and persist it. */
+function mutate(engId: string, fn: (e: Engagement) => Engagement): Engagement | null {
+  const all = load();
+  const idx = all.findIndex((e) => e.id === engId);
+  if (idx < 0) return null;
+  all[idx] = { ...fn(all[idx]!), updatedAt: Date.now() };
+  save(all, engId);
+  return all[idx]!;
 }
 
 export function getAllEngagements(): Engagement[] {
@@ -50,8 +71,18 @@ export function upsertEngagement(eng: Engagement): Engagement {
   } else {
     all.push(eng);
   }
-  save(all);
+  save(all, eng.id);
   return eng;
+}
+
+/** Merge a record received from Firestore (newer wins; never re-queued). */
+export function importRemoteEngagement(remote: Engagement): void {
+  const all = load();
+  const idx = all.findIndex((e) => e.id === remote.id);
+  if (idx >= 0 && (all[idx]!.updatedAt ?? 0) > (remote.updatedAt ?? 0)) return;
+  if (idx >= 0) all[idx] = remote;
+  else all.push(remote);
+  save(all);
 }
 
 export function advanceStage(
@@ -60,18 +91,8 @@ export function advanceStage(
   note?: string,
   by: EngagementUpdate["by"] = "brand"
 ): Engagement | null {
-  const all = load();
-  const idx = all.findIndex((e) => e.id === engId);
-  if (idx < 0) return null;
   const update: EngagementUpdate = { at: Date.now(), stage, note, by };
-  all[idx] = {
-    ...all[idx]!,
-    stage,
-    history: [...(all[idx]!.history ?? []), update],
-    updatedAt: Date.now(),
-  };
-  save(all);
-  return all[idx]!;
+  return mutate(engId, (e) => ({ ...e, stage, history: [...(e.history ?? []), update] }));
 }
 
 /** Create an engagement if it doesn't exist yet (shortlisting). */
@@ -85,22 +106,23 @@ export function shortlistCreator(
   const existing = getEngagement(id);
   if (existing) return existing;
   const now = Date.now();
+  // Drop undefined owner ids so demo records stay local-only.
+  const cleanMeta = Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined)) as EngagementMeta;
   const eng: Engagement = {
     id,
     briefId,
     creatorId,
     stage: "shortlisted",
     history: [{ at: now, stage: "shortlisted", by }],
-    ...meta,
+    ...cleanMeta,
     createdAt: now,
     updatedAt: now,
   };
   return upsertEngagement(eng);
 }
 
-/** Position of a stage on the canonical tracker ("selected" sits with "accepted"). */
+/** Position of a stage on the canonical tracker. */
 export function stageIndex(stage: EngagementStage): number {
-  if (stage === "selected") return PIPELINE_STAGES.indexOf("accepted");
   return PIPELINE_STAGES.indexOf(stage);
 }
 
@@ -121,10 +143,7 @@ export function contactCreator(engId: string): Engagement | null {
   return advanceStage(engId, "contacted", "Brand initiated contact", "brand");
 }
 
-export function creatorRespond(
-  engId: string,
-  accept: boolean
-): Engagement | null {
+export function creatorRespond(engId: string, accept: boolean): Engagement | null {
   return advanceStage(
     engId,
     accept ? "accepted" : "declined",
@@ -133,24 +152,43 @@ export function creatorRespond(
   );
 }
 
-export function selectCreator(engId: string, scope: string, timeline: string): Engagement | null {
-  const all = load();
-  const idx = all.findIndex((e) => e.id === engId);
-  if (idx < 0) return null;
+/**
+ * Selection: the brand picks this creator and confirms scope, timeline,
+ * requirements and the licensing terms that travel with the engagement.
+ */
+export function selectCreator(
+  engId: string,
+  terms: { scope: string; timeline: string; requirements: string; agreedLicense: AgreedLicense }
+): Engagement | null {
   const update: EngagementUpdate = {
     at: Date.now(),
     stage: "selected",
-    note: `Scope: ${scope}. Timeline: ${timeline}`,
+    note: `Selected. Scope: ${terms.scope}. Timeline: ${terms.timeline}.`,
     by: "brand",
   };
-  all[idx] = {
-    ...all[idx]!,
+  return mutate(engId, (e) => ({
+    ...e,
     stage: "selected",
-    scope,
-    timeline,
-    history: [...(all[idx]!.history ?? []), update],
-    updatedAt: Date.now(),
+    scope: terms.scope,
+    timeline: terms.timeline,
+    requirements: terms.requirements,
+    agreedLicense: terms.agreedLicense,
+    history: [...(e.history ?? []), update],
+  }));
+}
+
+/** Production status update posted by the creator (visible to the brand). */
+export function addProgressUpdate(
+  engId: string,
+  note: string,
+  percent?: number,
+  by: ProgressUpdate["by"] = "creator"
+): Engagement | null {
+  const entry: ProgressUpdate = {
+    at: Date.now(),
+    by,
+    note: note.trim().slice(0, 500),
+    ...(percent !== undefined && Number.isFinite(percent) ? { percent: Math.max(0, Math.min(100, Math.round(percent))) } : {}),
   };
-  save(all);
-  return all[idx]!;
+  return mutate(engId, (e) => ({ ...e, progress: [...(e.progress ?? []), entry] }));
 }

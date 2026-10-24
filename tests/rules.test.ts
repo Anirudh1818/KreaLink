@@ -435,3 +435,43 @@ describe("storage: evidence is private", () => {
     await assertFails(deleteObject(ref(as(CREATOR).storage(), path)));
   });
 });
+
+describe("pipelineEngagements: shared brand↔creator pipeline (item 5)", () => {
+  function eng(creatorId: string, creatorOwnerUid: string, stage = "shortlisted") {
+    return {
+      id: `brief-1-${creatorId}`, briefId: "brief-1", creatorId, stage, history: [],
+      brandOwnerUid: BRAND_V.uid, creatorOwnerUid, versions: [], createdAt: 1, updatedAt: 1,
+    };
+  }
+
+  it("verified brand can open a shared engagement with a real creator; unverified brand cannot", async () => {
+    await assertSucceeds(setDoc(doc(db(BRAND_V), "pipelineEngagements", "brief-1-kyle"), eng("kyle", CREATOR_V.uid)));
+    await assertFails(setDoc(doc(db(BRAND), "pipelineEngagements", "brief-1-kyle"), { ...eng("kyle", CREATOR_V.uid), brandOwnerUid: BRAND.uid }));
+  });
+
+  it("creatorOwnerUid must match the creator profile owner", async () => {
+    await assertFails(setDoc(doc(db(BRAND_V), "pipelineEngagements", "brief-1-kyle"), eng("kyle", CREATOR.uid)));
+  });
+
+  it("only the two participants can read it", async () => {
+    await seed(async (d) => { await setDoc(doc(d, "pipelineEngagements", "brief-1-kyle"), eng("kyle", CREATOR_V.uid)); });
+    await assertSucceeds(getDoc(doc(db(CREATOR_V), "pipelineEngagements", "brief-1-kyle")));
+    await assertSucceeds(getDocs(query(collection(db(BRAND_V), "pipelineEngagements"), where("brandOwnerUid", "==", BRAND_V.uid))));
+    await assertFails(getDoc(doc(db(BRAND), "pipelineEngagements", "brief-1-kyle")));
+    await assertFails(getDoc(doc(db(CREATOR), "pipelineEngagements", "brief-1-kyle")));
+  });
+
+  it("creator can post progress and versions but cannot reassign owners", async () => {
+    await seed(async (d) => { await setDoc(doc(d, "pipelineEngagements", "brief-1-kyle"), eng("kyle", CREATOR_V.uid, "production")); });
+    const ref_ = doc(db(CREATOR_V), "pipelineEngagements", "brief-1-kyle");
+    await assertSucceeds(updateDoc(ref_, { progress: [{ at: 2, by: "creator", note: "Rendering", percent: 50 }], updatedAt: 2 }));
+    await assertFails(updateDoc(ref_, { brandOwnerUid: CREATOR_V.uid }));
+  });
+
+  it("an unverified creator cannot accept paid work", async () => {
+    await seed(async (d) => { await setDoc(doc(d, "pipelineEngagements", "brief-1-anya"), eng("anya", CREATOR.uid, "contacted")); });
+    const ref_ = doc(db(CREATOR), "pipelineEngagements", "brief-1-anya");
+    await assertFails(updateDoc(ref_, { stage: "accepted" }));
+    await assertSucceeds(updateDoc(ref_, { stage: "declined" }));
+  });
+});

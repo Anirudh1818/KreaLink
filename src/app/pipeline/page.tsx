@@ -10,7 +10,10 @@ import type { CreativeBrief } from "@/lib/types";
 import {
   PIPELINE_STAGES,
   STAGE_LABEL,
-  acceptAllAndApply,
+  applyAgentDecisions,
+  getAgentResult,
+  startRevision,
+  STRONG_MATCH_THRESHOLD,
   advanceStage,
   approveVersion,
   checkMediaAgainstSpecs,
@@ -26,13 +29,13 @@ import {
   stageIndex,
   stepStage,
   submitVersion,
-  type AgentShortlistResult,
   type Engagement,
   type LicenseComparison,
   type LicenseTerm,
   type Version,
 } from "@/lib/r2";
 import { useR2Revision } from "@/lib/r2/useR2";
+import { AgentReview, AgreedTermsCard, NextStepBanner, ProgressFeed, SelectionPanel } from "@/components/pipeline/PipelineUI";
 
 // ─── Demo brief ───────────────────────────────────────────────────────────────
 
@@ -91,31 +94,32 @@ function StagePill({ stage, active }: { stage: string; active: boolean }) {
   );
 }
 
-function AgentPanel({ brief, poolSize }: { brief: CreativeBrief; poolSize: number }) {
+function AgentPanel({ brief, poolSize, ranked }: { brief: CreativeBrief; poolSize: number; ranked: MatchResult2[] }) {
+  const rev = useR2Revision();
+  const briefId = brief.id ?? "brief-draft";
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
-  const [result, setResult] = useState<AgentShortlistResult | null>(null);
+  // The stored result is the source of truth, so brand decisions survive reloads.
+  const result = useMemo(() => (rev ? getAgentResult(briefId) ?? null : null), [rev, briefId]);
 
   async function run() {
     setRunning(true);
-    setResult(null);
     setLog([]);
-
     // Real work first, then replay the steps so the log reflects actual output.
-    const ranked = runAutoShortlistForBrief(brief);
-    const top = ranked.actions[0];
+    const r = runAutoShortlistForBrief(brief);
+    const top = r.actions[0];
     const steps = [
       `Parsing brief "${brief.campaignName}" (${brief.contentType}, ${brief.aspectRatio.split(" ")[0]})…`,
+      ...(r.conflicts?.length ? [`⚠ ${r.conflicts.length} conflicting requirement(s) detected in the brief`] : []),
       `Loading creator pool (${poolSize} profiles)…`,
       "Scoring content type, skills, tools, format, commercial use & portfolio evidence…",
-      top ? `Top match: @${top.creatorId} at ${top.score}%` : "No strong matches found",
-      `Shortlisting top ${ranked.actions.length} creators into the pipeline ✓`,
+      top ? `Top match: @${top.creatorId} at ${top.score}%` : `No creator reached the ${STRONG_MATCH_THRESHOLD}% bar`,
+      r.actions.length ? `Proposed ${r.actions.length} creator(s) — waiting for your review ✓` : "Nothing proposed — showing closest alternatives",
     ];
     for (const s of steps) {
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((res) => setTimeout(res, 300));
       setLog((prev) => [...prev, s]);
     }
-    setResult(acceptAllAndApply(ranked, brief));
     setRunning(false);
   }
 
@@ -125,7 +129,7 @@ function AgentPanel({ brief, poolSize }: { brief: CreativeBrief; poolSize: numbe
         <div className="w-9 h-9 rounded-xl bg-lime-400/20 flex items-center justify-center text-lg">🤖</div>
         <div>
           <p className="text-sm font-bold text-white">Auto-Shortlist Agent</p>
-          <p className="text-xs text-white/50">Runs the matching engine against this brief</p>
+          <p className="text-xs text-white/50">Proposes creators — you accept, edit or reject each one</p>
         </div>
         <button
           onClick={run}
@@ -147,10 +151,8 @@ function AgentPanel({ brief, poolSize }: { brief: CreativeBrief; poolSize: numbe
         </div>
       )}
 
-      {result && (
-        <p className="text-[11px] text-white/50">
-          {result.summary} {result.nextStep}
-        </p>
+      {result && !running && (
+        <AgentReview result={result} ranked={ranked} onApply={() => applyAgentDecisions(briefId, brief)} tone="dark" />
       )}
     </div>
   );
@@ -265,6 +267,7 @@ function PipelineView() {
   const activeVersion = versions.find((v) => v.n === activeVersionN) ?? versions[versions.length - 1];
   const reviewable = [...versions].reverse().find((v) => v.status === "submitted");
   const [revisionFeedback, setRevisionFeedback] = useState("");
+  const [selecting, setSelecting] = useState(false);
 
   const [licenseTab, setLicenseTab] = useState<string | null>(null);
   const licenseCreatorId = listed.find((m) => m.creator.username === licenseTab)?.creator.username ?? listed[0]?.creator.username;
@@ -288,7 +291,7 @@ function PipelineView() {
 
   function handleRequestChanges() {
     if (!selectedEng || !reviewable || !revisionFeedback.trim()) return;
-    requestRevision(reviewable.id, revisionFeedback.trim(), "brand");
+    requestRevision(reviewable.id, revisionFeedback.trim(), "brand", BRIEF.brandName ?? "Brand");
     advanceStage(selectedEng.id, "changes_requested", revisionFeedback.trim(), "brand");
     setRevisionFeedback("");
   }
@@ -296,15 +299,25 @@ function PipelineView() {
   /** Demo helper: stand in for the creator so the full loop can be shown on one screen. */
   function handleSimulateSubmission() {
     if (!selectedEng) return;
-    const n = versions.length + 1;
-    const v = createVersion(selectedEng.id, n === 1 ? "Initial cut" : `Revision ${n - 1} — addressed feedback`, "/reels/reel-01.mp4");
-    submitVersion(v.id, "/reels/reel-01.mp4", {
-      width: 1080,
-      height: 1920,
-      durationSec: deliverySpecsForBrief(BRIEF).durationSec ?? 20,
-      aspectRatio: "9:16",
-      resolution: "1080×1920",
-    });
+    const handle = `@${selectedEng.creatorId}`;
+    // Revision rounds go requested → in progress → submitted, recording what they answer.
+    const draft =
+      selectedEng.stage === "changes_requested"
+        ? startRevision(selectedEng.id, handle)
+        : createVersion(selectedEng.id, "Initial cut", undefined, undefined, { submittedBy: handle });
+    const n = draft.n;
+    submitVersion(
+      draft.id,
+      "/reels/reel-01.mp4",
+      {
+        width: 1080,
+        height: 1920,
+        durationSec: deliverySpecsForBrief(BRIEF).durationSec ?? 20,
+        aspectRatio: "9:16",
+        resolution: "1080×1920",
+      },
+      n === 1 ? "Initial cut" : `Revision ${n - 1}: addressed "${draft.respondsTo?.feedback ?? "brand feedback"}"`
+    );
     advanceStage(selectedEng.id, "delivered", `v${n} submitted for review`, "creator");
     setActiveVersionN(n);
   }
@@ -377,7 +390,7 @@ function PipelineView() {
 
           {/* ──── LEFT: Auto-Shortlist Agent + Creator List ──── */}
           <div className="lg:col-span-1 space-y-4">
-            <AgentPanel key={briefId} brief={BRIEF} poolSize={pool.length} />
+            <AgentPanel key={briefId} brief={BRIEF} poolSize={pool.length} ranked={ranked} />
 
             <div className="space-y-2">
               <p className="text-xs font-bold text-white/40 uppercase tracking-widest px-1">
@@ -456,11 +469,12 @@ function PipelineView() {
                     ← Back
                   </button>
                   <button
-                    onClick={() => stepStage(selectedEng.id, 1)}
+                    // Selection always goes through the confirm-terms dialog.
+                    onClick={() => (selectedEng.stage === "accepted" ? setSelecting(true) : stepStage(selectedEng.id, 1))}
                     disabled={engStage < 0 || engStage >= PIPELINE_STAGES.length - 1}
                     className="flex-1 py-2 rounded-xl bg-lime-400 text-black text-xs font-bold hover:bg-lime-300 disabled:opacity-30 transition"
                   >
-                    Advance Stage →
+                    {selectedEng.stage === "accepted" ? "Select & confirm terms →" : "Advance Stage →"}
                   </button>
                 </div>
               ) : selected ? (
@@ -488,6 +502,21 @@ function PipelineView() {
                     </div>
                   </div>
                   <p className="text-[11px] text-white/50 leading-relaxed">{selected.whyExplanation}</p>
+                </div>
+              )}
+
+              {selectedEng && <NextStepBanner eng={selectedEng} side="brand" tone="dark" />}
+
+              {selectedEng && selecting && selectedEng.stage === "accepted" && (
+                <SelectionPanel eng={selectedEng} brief={BRIEF} onDone={() => setSelecting(false)} tone="dark" />
+              )}
+
+              {selectedEng && <AgreedTermsCard eng={selectedEng} tone="dark" />}
+
+              {selectedEng && ["production", "changes_requested", "delivered", "accepted_final"].includes(selectedEng.stage) && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-white/70">Production updates</p>
+                  <ProgressFeed eng={selectedEng} tone="dark" />
                 </div>
               )}
 
@@ -573,9 +602,24 @@ function PipelineView() {
                         Submitted: {activeVersion.submittedAt ? new Date(activeVersion.submittedAt).toLocaleString() : "—"}
                       </div>
 
+                      <div className="rounded-xl bg-white/[0.04] border border-white/10 p-3 text-[11px] text-white/60 space-y-1">
+                        <p><span className="text-white/40">Made by:</span> {activeVersion.submittedBy ?? `@${selectedEng?.creatorId ?? "creator"}`}</p>
+                        <p><span className="text-white/40">What changed:</span> {activeVersion.changeLog}</p>
+                        {activeVersion.respondsTo && (
+                          <p>
+                            <span className="text-white/40">Answers feedback on v{activeVersion.respondsTo.versionN}</span> requested by{" "}
+                            <span className="text-white/80">{activeVersion.respondsTo.requestedBy}</span> on{" "}
+                            {new Date(activeVersion.respondsTo.requestedAt).toLocaleString()}: “{activeVersion.respondsTo.feedback}”
+                          </p>
+                        )}
+                      </div>
+
                       {activeVersion.feedback.map((fb) => (
                         <div key={fb.id} className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-300">
-                          <span className="font-bold text-rose-400">Feedback: </span>{fb.text}
+                          <span className="font-bold text-rose-400">
+                            Changes requested by {fb.authorName ?? fb.by} · {new Date(fb.at).toLocaleString()}:{" "}
+                          </span>
+                          {fb.text}
                         </div>
                       ))}
 

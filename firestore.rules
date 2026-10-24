@@ -455,6 +455,54 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------------------
+    // pipelineEngagements/{id} — shortlist→delivery pipeline shared by one
+    // brand and one creator (versions embedded). Mirrors src/lib/r2.
+    // ------------------------------------------------------------------------
+    match /pipelineEngagements/{engId} {
+      function notSuspended() {
+        return !exists(docPath('verifications', me()))
+          || get(docPath('verifications', me())).data.status != 'suspended';
+      }
+
+      // Creator moves that commit to paid work need a verified creator.
+      function creatorStageOk() {
+        return request.resource.data.stage == resource.data.stage
+          || !(request.resource.data.stage in ['accepted', 'production', 'delivered'])
+          || isVerified('creator');
+      }
+
+      function ownersUnchanged() {
+        return request.resource.data.brandOwnerUid == resource.data.brandOwnerUid
+          && request.resource.data.creatorOwnerUid == resource.data.creatorOwnerUid
+          && request.resource.data.creatorId == resource.data.creatorId
+          && request.resource.data.briefId == resource.data.briefId
+          && request.resource.data.id == resource.data.id;
+      }
+
+      allow read: if isAdmin() || (
+        signedIn() && (resource.data.brandOwnerUid == me() || resource.data.creatorOwnerUid == me())
+      );
+
+      allow create: if isVerified('brand')
+        && request.resource.data.id == engId
+        && request.resource.data.brandOwnerUid == me()
+        && request.resource.data.creatorOwnerUid is string
+        && request.resource.data.creatorId is string
+        && exists(docPath('creators', request.resource.data.creatorId))
+        && get(docPath('creators', request.resource.data.creatorId)).data.get('ownerUid', null) == request.resource.data.creatorOwnerUid
+        && request.resource.data.versions is list;
+
+      allow update: if ownersUnchanged()
+        && request.resource.data.versions is list
+        && (
+          (resource.data.brandOwnerUid == me() && isVerified('brand'))
+          || (resource.data.creatorOwnerUid == me() && hasRole('creator') && notSuspended() && creatorStageOk())
+        );
+
+      allow delete: if isAdmin() || (signedIn() && resource.data.brandOwnerUid == me());
+    }
+
+    // ------------------------------------------------------------------------
     // Default deny
     // ------------------------------------------------------------------------
     match /{document=**} {

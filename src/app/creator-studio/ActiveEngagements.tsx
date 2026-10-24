@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   PIPELINE_STAGES,
   STAGE_LABEL,
+  addProgressUpdate,
   advanceStage,
   checkMediaAgainstSpecs,
   createVersion,
@@ -16,6 +17,7 @@ import {
   metaFromInputs,
   parseResolution,
   stageIndex,
+  startRevision,
   submitVersion,
   type DeliveryIssue,
   type DeliverySpecs,
@@ -26,6 +28,7 @@ import { useR2Revision } from "@/lib/r2/useR2";
 import { useAuth } from "@/lib/auth-context";
 import { canPerform, type AccessDecision, type RestrictedAction } from "@/lib/auth/policy";
 import { RestrictedNotice } from "@/components/auth/AccountUI";
+import { AgreedTermsCard, NextStepBanner, ProgressFeed } from "@/components/pipeline/PipelineUI";
 
 /** Signed-in creators must be verified; anonymous visitors use the local demo. */
 function useCreatorAccess(action: RestrictedAction): AccessDecision {
@@ -136,8 +139,10 @@ function SubmitVersionForm({ eng, nextVersion }: { eng: Engagement; nextVersion:
   function handleSubmit() {
     if (!canSubmit) return;
     const changeLog = notes.trim() || `v${nextVersion} submission`;
-    const v = createVersion(eng.id, changeLog, assetUrl.trim());
-    submitVersion(v.id, assetUrl.trim(), meta);
+    // Revision rounds submit the in-progress draft (which records the feedback it answers).
+    const draft = getVersions(eng.id).find((x) => x.status === "in_progress");
+    const v = draft ?? createVersion(eng.id, changeLog, undefined, undefined, { submittedBy: `@${eng.creatorId}` });
+    submitVersion(v.id, assetUrl.trim(), meta, changeLog);
     advanceStage(eng.id, "delivered", `v${v.n} submitted for review`, "creator");
   }
 
@@ -289,9 +294,13 @@ function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[
   const acceptAccess = useCreatorAccess("creator.acceptInvitation");
   const submitAccess = useCreatorAccess("creator.submitDeliverable");
   const idx = stageIndex(eng.stage);
-  const canSubmit = eng.stage === "production" || eng.stage === "changes_requested";
+  const revisionDraft = versions.find((v) => v.status === "in_progress");
+  // In a revision round the creator first starts the revision (status: in progress).
+  const canSubmit = eng.stage === "production" || (eng.stage === "changes_requested" && !!revisionDraft);
   const lastRequested = [...versions].reverse().find((v) => v.status === "requested");
   const latestFeedback = lastRequested?.feedback[lastRequested.feedback.length - 1];
+  const [progressNote, setProgressNote] = useState("");
+  const [progressPct, setProgressPct] = useState("");
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 space-y-4">
@@ -338,23 +347,91 @@ function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[
         </div>
       )}
 
-      {(eng.stage === "accepted" || eng.stage === "selected") && (
+      <NextStepBanner eng={eng} side="creator" tone="light" />
+
+      {eng.stage === "accepted" && (
+        <p className="text-xs text-slate-600">
+          You&apos;ve accepted. The brand will now select you and confirm the scope, timeline and licence terms.
+        </p>
+      )}
+
+      {/* Terms confirmed at selection travel with the engagement through delivery */}
+      {idx >= stageIndex("selected") && <AgreedTermsCard eng={eng} tone="light" />}
+
+      {eng.stage === "selected" && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-600 flex-1">You&apos;ve accepted — start production when ready.</span>
+          <span className="text-xs text-slate-600 flex-1">The brand selected you and confirmed the terms above.</span>
           <button
             type="button"
             onClick={() => advanceStage(eng.id, "production", "Creator started production", "creator")}
-            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            disabled={!submitAccess.allowed}
+            className="disabled:opacity-50 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
           >
             Start production
           </button>
         </div>
       )}
 
+      {/* Production status updates (visible to the brand) */}
+      {(eng.stage === "production" || eng.stage === "changes_requested") && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <h5 className="text-xs font-bold text-slate-900">Progress updates</h5>
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={progressNote}
+              onChange={(e) => setProgressNote(e.target.value)}
+              maxLength={500}
+              placeholder="e.g. Storyboard locked, generating hero shots in Runway"
+              className="kl-input flex-1 min-w-[200px] text-xs"
+            />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={progressPct}
+              onChange={(e) => setProgressPct(e.target.value)}
+              placeholder="%"
+              className="kl-input w-20 text-xs"
+              aria-label="Percent complete"
+            />
+            <button
+              type="button"
+              disabled={progressNote.trim().length < 3}
+              onClick={() => {
+                addProgressUpdate(eng.id, progressNote, progressPct ? Number(progressPct) : undefined, "creator");
+                setProgressNote("");
+                setProgressPct("");
+              }}
+              className="disabled:opacity-50 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              Post update
+            </button>
+          </div>
+          <ProgressFeed eng={eng} tone="light" />
+        </div>
+      )}
+
       {eng.stage === "changes_requested" && latestFeedback && (
-        <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800">
-          <span className="font-bold">Brand feedback: </span>
-          {latestFeedback.text}
+        <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 space-y-2">
+          <p>
+            <span className="font-bold">
+              Changes requested on v{lastRequested?.n} by {latestFeedback.authorName ?? eng.brandName ?? "the brand"} ·{" "}
+              {new Date(latestFeedback.at).toLocaleString()}:{" "}
+            </span>
+            {latestFeedback.text}
+          </p>
+          {revisionDraft ? (
+            <p className="font-semibold">v{revisionDraft.n} is in progress — submit it below when ready.</p>
+          ) : (
+            <button
+              type="button"
+              disabled={!submitAccess.allowed}
+              onClick={() => startRevision(eng.id, `@${eng.creatorId}`)}
+              className="disabled:opacity-50 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+            >
+              Start revision v{versions.length + 1}
+            </button>
+          )}
         </div>
       )}
 
@@ -372,9 +449,20 @@ function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[
                 </p>
                 <p className="text-[10px] text-slate-500 truncate">
                   {v.submittedAt ? new Date(v.submittedAt).toLocaleString() : "Not submitted"}
+                  {v.submittedBy && ` · by ${v.submittedBy}`}
                   {v.mediaMeta && ` · ${v.mediaMeta.aspectRatio} · ${v.mediaMeta.resolution}`}
                   {v.mediaMeta?.durationSec !== undefined && ` · ${v.mediaMeta.durationSec}s`}
                 </p>
+                {v.respondsTo && (
+                  <p className="text-[10px] text-slate-600">
+                    Answers feedback on v{v.respondsTo.versionN} requested by {v.respondsTo.requestedBy}: “{v.respondsTo.feedback}”
+                  </p>
+                )}
+                {v.feedback.map((fb) => (
+                  <p key={fb.id} className="text-[10px] text-rose-700">
+                    Changes requested by {fb.authorName ?? fb.by} · {new Date(fb.at).toLocaleString()}: “{fb.text}”
+                  </p>
+                ))}
               </div>
               <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold ${VERSION_PILL[v.status]}`}>
                 {VERSION_LABEL[v.status]}

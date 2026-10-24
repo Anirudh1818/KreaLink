@@ -49,6 +49,7 @@ const SIDEBAR_BY_KIND: Record<SidebarKind, NavLink[]> = {
     { href: "/creator", label: "Creator Portal", icon: "home" },
     { href: "/creator-studio?tab=engagements", label: "Opportunities", icon: "inbox" },
     { href: "/join-creator", label: "Public Profile", icon: "user" },
+    { href: "/creator-studio?tab=licensing", label: "Licensing Terms", icon: "scale" },
     { href: "/creator/verification", label: "Verification", icon: "shield" },
   ],
   admin: [
