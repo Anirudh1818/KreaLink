@@ -157,6 +157,8 @@ export type PortalArea = "brand" | "creator" | "admin" | "public";
 export function portalForPath(pathname: string): PortalArea {
   const under = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
   if (under("/admin")) return "admin";
+  // Direct post creation is public so anyone can test and present without sign-in gates.
+  if (under("/post") || under("/create-post")) return "public";
   // The campaign pipeline is a brand tool.
   if (under("/brand") || under("/pipeline")) return "brand";
   // Profile builder and studio are creator tools.
@@ -164,8 +166,8 @@ export function portalForPath(pathname: string): PortalArea {
   return "public";
 }
 
-/** Paths inside a portal that must stay reachable without that role (signup flows). */
-const OPEN_PORTAL_PATHS = ["/brand/signup", "/creator/signup", "/admin/login"];
+/** Paths inside a portal that must stay reachable without that role (signup flows, public creator). */
+const OPEN_PORTAL_PATHS = ["/brand/signup", "/creator/signup", "/admin/login", "/post", "/create-post"];
 
 /** Explains how owners get admin access; any signed-in account may view it. */
 export const ADMIN_ACCESS_PATH = "/admin/access";

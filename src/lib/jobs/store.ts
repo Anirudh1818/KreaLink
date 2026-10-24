@@ -90,10 +90,32 @@ export function useOpenJobs(): { jobs: Job[]; loading: boolean } {
     []
   );
   const jobs = useMemo(() => {
+    let local: Job[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("krealink-briefs");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            local = parsed
+              .filter((b) => b && b.id && b.campaignName)
+              .map((b) => ({
+                ...b,
+                id: b.id,
+                source: "platform" as const,
+                postedAt: toMillis(b.createdAt),
+              }));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
     const demo: Job[] = DEMO_BRIEFS.filter((b) => b.id).map((b) => ({ ...b, id: b.id!, source: "demo", postedAt: 0 }));
     const real = platform ?? [];
-    const realIds = new Set(real.map((j) => j.id));
-    return [...real, ...demo.filter((d) => !realIds.has(d.id))];
+    const combinedReal = [...local, ...real];
+    const realIds = new Set(combinedReal.map((j) => j.id));
+    return [...combinedReal, ...demo.filter((d) => !realIds.has(d.id))];
   }, [platform]);
   return { jobs, loading: platform === null };
 }

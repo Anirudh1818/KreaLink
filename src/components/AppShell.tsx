@@ -16,6 +16,7 @@ import { PortalLoading, VerificationBadge } from "@/components/auth/AccountUI";
 type NavLink = { href: string; label: string; icon: IconName };
 
 const DISCOVER: NavLink = { href: "/discover", label: "Discover", icon: "compass" };
+const POST_BRIEF: NavLink = { href: "/post", label: "Create Post", icon: "chatPlus" };
 const BRAND_HUB: NavLink = { href: "/brand", label: "Brand Hub", icon: "briefcase" };
 const STUDIO: NavLink = { href: "/creator-studio", label: "Studio", icon: "film" };
 const CREATOR_PORTAL: NavLink = { href: "/creator", label: "Creator Portal", icon: "film" };
@@ -26,10 +27,10 @@ const TOP: NavLink = { href: "/top-creators", label: "Top Creators", icon: "star
 
 /** Navigation follows the trusted role; anonymous visitors see the demo set. */
 function topLinksFor(account: Account): NavLink[] {
-  if (account.isAdmin) return [ADMIN, DISCOVER, TOP];
-  if (account.role === "brand") return [DISCOVER, TOP, BRAND_HUB, PIPELINE];
-  if (account.role === "creator") return [FIND_JOBS, CREATOR_PORTAL, STUDIO, TOP];
-  return [DISCOVER, TOP, BRAND_HUB, STUDIO, PIPELINE];
+  if (account.isAdmin) return [ADMIN, DISCOVER, TOP, POST_BRIEF];
+  if (account.role === "brand") return [POST_BRIEF, DISCOVER, TOP, BRAND_HUB, PIPELINE];
+  if (account.role === "creator") return [FIND_JOBS, CREATOR_PORTAL, STUDIO, TOP, POST_BRIEF];
+  return [POST_BRIEF, DISCOVER, TOP, BRAND_HUB, STUDIO, PIPELINE];
 }
 
 /** Sidebar tools for each portal — roles never see each other's tools. */
@@ -43,7 +44,7 @@ function sidebarKindFor(account: Account): SidebarKind {
 
 const SIDEBAR_BY_KIND: Record<SidebarKind, NavLink[]> = {
   brand: [
-    { href: "/brand?tab=create-brief", label: "Post a Job", icon: "chatPlus" },
+    { href: "/post", label: "Create Post / Brief", icon: "chatPlus" },
     { href: "/brand?tab=pipeline", label: "Applicants & Pipeline", icon: "inbox" },
     { href: "/brand?tab=matches", label: "Talent Analytics", icon: "chart" },
     { href: "/brand?tab=matches", label: "Compare Creators", icon: "compare" },
@@ -166,7 +167,14 @@ function TopNav({
       </nav>
 
       {/* Right: actions + avatar */}
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-2">
+        <Link
+          href="/post"
+          className="inline-flex items-center gap-1.5 rounded-full bg-lime-400 px-3.5 py-1.5 text-[12px] font-bold text-ink shadow-md transition hover:bg-lime-300 active:scale-95"
+        >
+          <Icon name="chatPlus" size={13} />
+          <span>Post Brief</span>
+        </Link>
         <IconButton icon="search" tone="glass" size={34} label="Search" href="/discover" />
         <IconButton icon="settings" tone="glass" size={34} label="Settings" href="/me" className="hidden sm:flex" />
 
@@ -387,7 +395,7 @@ export function AppShell({
   // Portal guard (UX only — firestore.rules enforce access on the server).
   const area = portalForPath(pathname);
   const decision = account.ready ? decideRoute(pathname, account.principal) : { allow: true as const };
-  const mustPickRole = account.needsRoleSetup && area !== "public" && !pathname.endsWith("/signup");
+  const mustPickRole = account.needsRoleSetup && area !== "public" && !pathname.endsWith("/signup") && !pathname.startsWith("/post") && !pathname.startsWith("/create-post");
   const redirectTo = mustPickRole
     ? "/choose-role?setup=1"
     : area === "admin" && account.adminNeedsMfa
