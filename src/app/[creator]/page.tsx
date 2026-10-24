@@ -93,6 +93,13 @@ export default function CreatorProfilePage() {
         (c) => c.creator.username.toLowerCase() === creatorUsername.toLowerCase()
       );
 
+      // Render bundled demo creators immediately; Firestore data (if any) replaces it below.
+      if (foundDemo) {
+        setCreatorProfile(foundDemo.creator);
+        setPortfolioItems(foundDemo.portfolio);
+        setIsLoading(false);
+      }
+
       try {
         const creatorRef = doc(db, "creators", creatorUsername);
         const creatorSnap = await getDoc(creatorRef);
