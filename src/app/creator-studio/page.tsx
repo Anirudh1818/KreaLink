@@ -194,11 +194,7 @@ export default function CreatorStudioPage() {
   }
 
   return (
-    <AppShell
-      role="creator"
-      activeNav="my-projects"
-      creatorName={creatorProfile.name || "Anya Sharma"}
-    >
+    <AppShell>
       <div className="space-y-6 max-w-7xl mx-auto">
         {/* Creator Studio Top Header Banner */}
         <div className="rounded-2xl bg-gradient-to-r from-[#0a352c] via-[#0d4036] to-[#082923] p-5 text-white border border-emerald-500/25 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">

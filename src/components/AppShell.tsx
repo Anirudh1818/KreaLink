@@ -1,208 +1,326 @@
 "use client";
 
-import { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { KreaMark, Icon, type IconName } from "@/components/ui/icons";
+import { Avatar, Badge, IconButton, Button, cn } from "@/components/ui/kit";
 
-export type AppShellProps = {
-  children: ReactNode;
-  role?: "brand" | "creator";
-  activeNav?: string;
-  onNavClick?: (navKey: string) => void;
-  brandName?: string;
-  creatorName?: string;
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
+
+type NavLink = { href: string; label: string; icon: IconName };
+
+const TOP_LINKS: NavLink[] = [
+  { href: "/discover", label: "Discover", icon: "compass" },
+  { href: "/brand", label: "Brand Hub", icon: "briefcase" },
+  { href: "/creator-studio", label: "Studio", icon: "film" },
+];
+
+const SIDEBAR_TOOLS: NavLink[] = [
+  { href: "/brand?tab=create-brief", label: "New Brief", icon: "chatPlus" },
+  { href: "/brand?tab=matches", label: "Talent Analytics", icon: "chart" },
+  { href: "/brand?tab=matches", label: "Compare Creators", icon: "compare" },
+];
+
+/* ------------------------------------------------------------------ */
+/* Brief history (reads localStorage, falls back to demo stubs)       */
+/* ------------------------------------------------------------------ */
+
+type BriefStub = { id: string; label: string; status: "active" | "draft" | "closed" };
+
+function useBriefHistory(): BriefStub[] {
+  const [stubs, setStubs] = useState<BriefStub[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("krealink-briefs");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setStubs(parsed.slice(0, 6) as BriefStub[]);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    // Demo stubs
+    setStubs([
+      { id: "brief-sneaker-01", label: "Sneaker Reel (9:16)", status: "active" },
+      { id: "brief-apparel-02", label: "Apparel Film (16:9)", status: "active" },
+    ]);
+  }, []);
+  return stubs;
+}
+
+const STATUS_COLOR: Record<BriefStub["status"], "green" | "amber" | "gray"> = {
+  active: "green",
+  draft: "amber",
+  closed: "gray",
 };
 
-export function AppShell({
-  children,
-  role = "brand",
-  activeNav,
-  onNavClick,
-  brandName = "GlowCo Marketing",
-  creatorName = "Anya Sharma",
-}: AppShellProps) {
-  const { user } = useAuth();
+/* ------------------------------------------------------------------ */
+/* Top-level Navbar                                                    */
+/* ------------------------------------------------------------------ */
+
+function TopNav({
+  sidebarOpen,
+  onMenuToggle,
+}: {
+  sidebarOpen: boolean;
+  onMenuToggle: () => void;
+}) {
   const pathname = usePathname();
+  const { user, signOutUser } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const brandNavItems = [
-    { key: "dashboard", label: "Dashboard", icon: "⊞", href: "/brand?tab=briefs" },
-    { key: "find-creators", label: "Find Creators", icon: "🔍", href: "/brand?tab=matches" },
-    { key: "campaigns", label: "Campaigns", icon: "📁", href: "/brand?tab=engagements" },
-    { key: "messages", label: "Messages", icon: "💬", badge: 3, href: "#" },
-    { key: "saved-creators", label: "Saved Creators", icon: "♡", href: "/discover" },
-    { key: "analytics", label: "Analytics", icon: "📈", href: "#" },
-    { key: "brand-toolkit", label: "Brand Toolkit", icon: "🧰", href: "#" },
-  ];
-
-  const creatorNavItems = [
-    { key: "dashboard", label: "Dashboard", icon: "⊞", href: "/creator-studio" },
-    { key: "my-projects", label: "My Projects", icon: "📁", badge: 2, href: "/creator-studio?tab=invitations" },
-    { key: "messages", label: "Messages", icon: "💬", badge: 2, href: "#" },
-    { key: "profile-portfolio", label: "Profile & Portfolio", icon: "👤", href: "/creator-studio?tab=portfolio" },
-    { key: "analytics", label: "Analytics", icon: "📈", href: "#" },
-    { key: "brand-opportunities", label: "Brand Opportunities", icon: "⚡", href: "/discover" },
-  ];
-
-  const navItems = role === "creator" ? creatorNavItems : brandNavItems;
+  // Close user menu on outside click
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
-      <div className="flex flex-1">
-        {/* Left Sidebar */}
-        <aside className="w-60 shrink-0 bg-[#0c1017] border-r border-white/[0.06] flex flex-col justify-between hidden md:flex sticky top-0 h-screen z-40 select-none">
-          <div className="p-4 space-y-6">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2.5 px-2 group">
-              <div className="h-7 w-7 rounded-lg bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-black font-black text-xs shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-                K
-              </div>
-              <span className="font-heading font-extrabold text-lg tracking-tight text-white group-hover:text-emerald-300 transition">
-                KreaLink
-              </span>
-            </Link>
+    <header className="fixed inset-x-0 top-0 z-50 flex h-14 items-center border-b border-white/[0.08] bg-ink/90 px-3 backdrop-blur-xl">
+      {/* Left: hamburger + logo */}
+      <div className="flex items-center gap-2">
+        <IconButton
+          icon="menu"
+          tone="glass"
+          size={34}
+          label={sidebarOpen ? "Close menu" : "Open menu"}
+          onClick={onMenuToggle}
+          className="md:hidden"
+        />
+        <Link href="/" className="flex items-center gap-2 rounded-lg px-1 py-1 transition hover:opacity-90">
+          <KreaMark size={28} />
+          <span className="hidden text-[14px] font-semibold tracking-tight text-white sm:block">
+            KreaLink
+          </span>
+        </Link>
+      </div>
 
-            {/* Menu Section */}
-            <div className="space-y-1">
-              <span className="px-3 text-[10px] font-mono tracking-wider uppercase text-slate-500 font-semibold">
-                MENU
-              </span>
-              <nav className="mt-2 space-y-1">
-                {navItems.map((item) => {
-                  const isCurrent = activeNav ? activeNav === item.key : pathname.includes(item.key);
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => {
-                        if (onNavClick) onNavClick(item.key);
-                        else if (item.href && item.href !== "#") window.location.href = item.href;
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                        isCurrent
-                          ? "bg-[#122822] text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-950/50"
-                          : "text-slate-400 hover:text-white hover:bg-white/[0.04]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <span className={`text-sm ${isCurrent ? "text-emerald-400" : "text-slate-400"}`}>
-                          {item.icon}
-                        </span>
-                        <span>{item.label}</span>
-                      </div>
-                      {item.badge && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-black leading-none">
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-          </div>
-
-          {/* Bottom Settings & User Account Profile */}
-          <div className="p-3 border-t border-white/[0.06] space-y-2">
-            <button
-              type="button"
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.04] transition"
-            >
-              <span className="text-sm">⚙</span>
-              <span>Settings</span>
-            </button>
-
+      {/* Centre nav */}
+      <nav className="mx-auto hidden items-center gap-0.5 md:flex">
+        {TOP_LINKS.map((l) => {
+          const active = pathname.startsWith(l.href);
+          return (
             <Link
-              href={role === "creator" ? "/creator-studio" : "/brand"}
-              className="flex items-center gap-2.5 p-2 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.04] transition"
+              key={l.href}
+              href={l.href}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-medium transition",
+                active ? "bg-white/10 text-white" : "text-white/65 hover:text-white"
+              )}
             >
-              <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-bold text-white text-xs shadow-sm">
-                {role === "creator" ? "A" : "G"}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-white truncate">
-                  {role === "creator" ? creatorName : brandName}
-                </p>
-                <p className="text-[10px] text-slate-400 capitalize truncate">
-                  {role === "creator" ? "Creator Account" : "Brand Account"}
-                </p>
-              </div>
+              <Icon name={l.icon} size={13} />
+              {l.label}
             </Link>
-          </div>
-        </aside>
+          );
+        })}
+      </nav>
 
-        {/* Main View Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Top Bar */}
-          <header className="h-14 border-b border-white/[0.06] bg-[#0c1017]/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
-            {/* Search Input */}
-            <div className="relative w-80 md:w-96">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
-              <input
-                type="text"
-                placeholder={role === "creator" ? "Search brands, projects or messages..." : "Search creators, tools, styles or campaigns..."}
-                className="w-full pl-8 pr-14 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-emerald-500/50 transition"
-              />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-mono text-slate-400">
-                Ctrl K
-              </span>
-            </div>
+      {/* Right: actions + avatar */}
+      <div className="ml-auto flex items-center gap-1.5">
+        <IconButton icon="search" tone="glass" size={34} label="Search" href="/discover" />
+        <IconButton icon="bell" tone="glass" size={34} label="Notifications" badge={2} onClick={() => {}} />
+        <IconButton icon="settings" tone="glass" size={34} label="Settings" href="/me" className="hidden sm:flex" />
 
-            {/* Right Profile & Actions */}
-            <div className="flex items-center gap-3">
-              {/* Role Switcher Pill */}
-              <div className="flex items-center rounded-lg bg-black/40 border border-white/10 p-0.5 text-[11px] font-medium">
+        {/* Avatar / user menu */}
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((p) => !p)}
+            className="ml-1 flex items-center gap-2 rounded-full p-0.5 ring-2 ring-white/15 transition hover:ring-lime-400/50"
+          >
+            <Avatar
+              src={user?.photoURL ?? undefined}
+              name={user?.displayName || user?.email || "Guest"}
+              size={28}
+            />
+          </button>
+          {menuOpen && (
+            <div className="animate-pop absolute right-0 top-10 z-50 w-52 overflow-hidden rounded-2xl bg-[#1a1b1b] shadow-2xl ring-1 ring-white/10">
+              <div className="px-4 py-3">
+                <p className="text-[12px] font-semibold text-white truncate">{user?.displayName || "Guest"}</p>
+                <p className="text-[11px] text-white/50 truncate">{user?.email ?? "Not signed in"}</p>
+              </div>
+              <div className="border-t border-white/8 py-1">
                 <Link
-                  href="/brand"
-                  className={`px-2.5 py-1 rounded-md transition ${
-                    role === "brand" ? "bg-emerald-500/20 text-emerald-300 font-bold" : "text-slate-400 hover:text-white"
-                  }`}
+                  href="/me"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
                 >
-                  Brand View
+                  <Icon name="user" size={13} /> Account
                 </Link>
                 <Link
                   href="/creator-studio"
-                  className={`px-2.5 py-1 rounded-md transition ${
-                    role === "creator" ? "bg-emerald-500/20 text-emerald-300 font-bold" : "text-slate-400 hover:text-white"
-                  }`}
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
                 >
-                  Creator View
+                  <Icon name="film" size={13} /> Creator Studio
                 </Link>
               </div>
-
-              {/* Notification Bell */}
-              <button
-                type="button"
-                className="relative p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.04] transition"
-                title="Notifications"
-              >
-                <span className="text-sm">🔔</span>
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-[#0c1017]" />
-              </button>
-
-              {/* User Avatar */}
-              <div className="flex items-center gap-2 pl-2 border-l border-white/[0.08]">
-                <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-bold text-white text-xs">
-                  {role === "creator" ? "A" : "G"}
-                </div>
-                <div className="hidden lg:block text-left">
-                  <p className="text-xs font-semibold text-white leading-tight">
-                    {role === "creator" ? creatorName : brandName}
-                  </p>
-                  <p className="text-[10px] text-slate-400 capitalize">
-                    {role === "creator" ? "Creator Account" : "Brand Account"}
-                  </p>
-                </div>
+              <div className="border-t border-white/8 py-1">
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={() => { signOutUser(); setMenuOpen(false); }}
+                    className="flex w-full items-center gap-2 px-4 py-2 text-[12px] text-rose-400 hover:bg-rose-500/10"
+                  >
+                    <Icon name="logout" size={13} /> Sign Out
+                  </button>
+                ) : (
+                  <Link
+                    href="/login"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2 text-[12px] text-lime-300 hover:bg-lime-400/10"
+                  >
+                    <Icon name="arrowRight" size={13} /> Sign In
+                  </Link>
+                )}
               </div>
             </div>
-          </header>
-
-          {/* Dynamic Content */}
-          <main className="flex-1 p-5 md:p-7 overflow-y-auto">
-            {children}
-          </main>
+          )}
         </div>
       </div>
+    </header>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark Sidebar                                                        */
+/* ------------------------------------------------------------------ */
+
+function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const pathname = usePathname();
+  const briefHistory = useBriefHistory();
+
+  return (
+    <>
+      {/* Backdrop (mobile) */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px] md:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Panel */}
+      <aside
+        className={cn(
+          "fixed left-0 top-14 z-40 flex h-[calc(100dvh-3.5rem)] w-64 flex-col overflow-y-auto border-r border-white/[0.07] bg-rail transition-transform duration-200 rail-scroll",
+          open ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
+      >
+        {/* MENU section */}
+        <div className="px-3 pt-4">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-rail-muted">
+            Menu
+          </p>
+          {SIDEBAR_TOOLS.map((l) => {
+            const active = pathname.includes(l.href.split("?")[0] ?? "");
+            return (
+              <Link
+                key={l.label}
+                href={l.href}
+                onClick={onClose}
+                className={cn(
+                  "mb-0.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium transition",
+                  active ? "bg-white/10 text-white" : "text-rail-text hover:bg-white/[0.06] hover:text-white"
+                )}
+              >
+                <Icon name={l.icon} size={14} className={active ? "text-lime-400" : "text-rail-muted"} />
+                {l.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* HISTORY section */}
+        <div className="mt-5 flex-1 px-3">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-rail-muted">
+            Recent Briefs
+          </p>
+          {briefHistory.length === 0 ? (
+            <p className="px-2 text-[11.5px] text-rail-muted">No briefs yet.</p>
+          ) : (
+            briefHistory.map((b) => (
+              <Link
+                key={b.id}
+                href={`/brand?tab=briefs&brief=${b.id}`}
+                onClick={onClose}
+                className="mb-1 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] text-rail-text hover:bg-white/[0.06] hover:text-white"
+              >
+                <span className="flex-1 truncate">{b.label}</span>
+                <Badge tone={STATUS_COLOR[b.status]} dot className="shrink-0">
+                  {b.status}
+                </Badge>
+              </Link>
+            ))
+          )}
+        </div>
+
+        {/* Bottom CTA */}
+        <div className="border-t border-white/[0.07] p-3">
+          <Button
+            variant="lime"
+            size="sm"
+            icon="chatPlus"
+            href="/brand?tab=create-brief"
+            className="w-full justify-center"
+            onClick={onClose}
+          >
+            Start New Brief
+          </Button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* AppShell wrapper                                                    */
+/* ------------------------------------------------------------------ */
+
+export function AppShell({
+  children,
+  noSidebar,
+}: {
+  children: ReactNode;
+  noSidebar?: boolean;
+}) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close sidebar on route change
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  return (
+    <div className="min-h-screen bg-ink text-body">
+      <TopNav sidebarOpen={sidebarOpen} onMenuToggle={() => setSidebarOpen((p) => !p)} />
+
+      {!noSidebar && (
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Main content shifts right on md when sidebar is shown */}
+      <main
+        className={cn(
+          "pt-14 transition-[margin] duration-200",
+          !noSidebar && "md:ml-64"
+        )}
+      >
+        {children}
+      </main>
     </div>
   );
 }

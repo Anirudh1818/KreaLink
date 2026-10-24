@@ -551,16 +551,7 @@ export default function BrandDashboardPage() {
       : "dashboard";
 
   return (
-    <AppShell
-      role="brand"
-      activeNav={currentNavKey}
-      onNavClick={(key) => {
-        if (key === "dashboard") setActiveTab("briefs");
-        else if (key === "find-creators") setActiveTab("matches");
-        else if (key === "campaigns") setActiveTab("engagements");
-      }}
-      brandName={brand.name || "GlowCo Marketing"}
-    >
+    <AppShell>
       {/* ======================================================== */}
       {/* SCREEN 1: BRAND DASHBOARD & AI BRIEF BUILDER */}
       {/* ======================================================== */}
