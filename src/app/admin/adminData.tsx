@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { AuditLogDoc, VerificationDoc } from "@/lib/auth/schema";
+import type { AuditLogDoc, UserDoc, VerificationDoc } from "@/lib/auth/schema";
 
 const TABS = [
   { href: "/admin", label: "Overview" },
-  { href: "/admin/verifications", label: "Verification queue" },
-  { href: "/admin/audit", label: "Audit log" },
+  { href: "/admin/verifications", label: "Verification Queue & Approvals" },
+  { href: "/admin/users", label: "All Accounts & Surveillance" },
+  { href: "/admin/audit", label: "Security & Audit Trail" },
 ];
 
 export function AdminHeader({ title, subtitle }: { title: string; subtitle: string }) {
@@ -79,6 +80,25 @@ export function useAuditLog(targetUid?: string, max = 100) {
     );
   }, [targetUid, max]);
   return { rows, error };
+}
+
+/** Real-time surveillance of all registered users in Firestore. */
+export function useAllUsers(): { rows: WithId<UserDoc>[]; error: string | null; loading: boolean } {
+  const [state, setState] = useState<{ rows: WithId<UserDoc>[]; error: string | null; loading: boolean }>({
+    rows: [],
+    error: null,
+    loading: true,
+  });
+  useEffect(
+    () =>
+      onSnapshot(
+        collection(db, "users"),
+        (s) => setState({ rows: s.docs.map((d) => ({ id: d.id, ...(d.data() as UserDoc) })), error: null, loading: false }),
+        () => setState({ rows: [], error: "You don't have permission to list platform users.", loading: false })
+      ),
+    []
+  );
+  return state;
 }
 
 export function millis(t: unknown): number {
