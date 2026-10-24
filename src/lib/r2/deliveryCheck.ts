@@ -4,7 +4,8 @@
  * against brief requirements.
  */
 
-import type { MediaMeta, DeliveryIssue, DeliveryCheck } from "./types";
+import type { MediaMeta, DeliveryIssue, DeliveryCheck, DeliverySpecs } from "./types";
+import type { CreativeBrief } from "@/lib/types";
 
 /** Canonical aspect-ratio fractions (±4% tolerance). */
 const KNOWN_RATIOS: { label: string; ratio: number }[] = [
@@ -62,26 +63,56 @@ function parseRatio(s: string): number | null {
   return parseInt(m[1]!) / parseInt(m[2]!);
 }
 
-/** Strict delivery check against a brief's requirements. */
-export async function runDeliveryCheck(params: {
-  mediaUrl: string;
-  briefAspectRatio: string;  // e.g. "9:16 Vertical (Reels/Shorts)"
-  briefDurationSec?: number;
-}): Promise<DeliveryCheck> {
-  const { mediaUrl, briefAspectRatio, briefDurationSec } = params;
+/** Parse "1080x1920" / "1080×1920" → { width, height }. */
+export function parseResolution(s: string): { width: number; height: number } | null {
+  const m = s.trim().match(/^(\d+)\s*[x×X*]\s*(\d+)$/);
+  if (!m) return null;
+  return { width: parseInt(m[1]!), height: parseInt(m[2]!) };
+}
 
-  let meta: MediaMeta;
-  try {
-    meta = await extractVideoMeta(mediaUrl);
-  } catch {
-    // If video metadata can't be extracted, parse from filename hints
-    meta = { width: 0, height: 0, aspectRatio: "unknown", resolution: "unknown" };
+/** Build MediaMeta from values a creator typed in (no file access needed). */
+export function metaFromInputs(resolution: string, durationSec?: number): MediaMeta {
+  const res = parseResolution(resolution);
+  if (!res) return { width: 0, height: 0, durationSec, aspectRatio: "unknown", resolution: resolution || "unknown" };
+  return {
+    width: res.width,
+    height: res.height,
+    durationSec,
+    aspectRatio: detectAspectRatio(res.width, res.height),
+    resolution: `${res.width}×${res.height}`,
+  };
+}
+
+/** Pull the technical specs out of a brief ("9:16 Vertical…", "1x 30-Second Hero Video"). */
+export function deliverySpecsForBrief(brief: CreativeBrief): DeliverySpecs {
+  const aspectRatio = brief.aspectRatio.split(" ")[0] ?? brief.aspectRatio;
+  let durationSec: number | undefined;
+  for (const d of [...brief.deliverables, brief.requirements]) {
+    const m = d.match(/(\d+)\s*(?:-|\s)?\s*(?:s\b|sec|second)/i);
+    if (m) {
+      durationSec = parseInt(m[1]!);
+      break;
+    }
   }
+  const wants4k = /\b4k\b/i.test(brief.deliverables.join(" "));
+  return { aspectRatio, durationSec, minShortSide: wants4k ? 2160 : 720 };
+}
 
+/** Pure spec check — shared by the URL-probing and manual-entry flows. */
+export function checkMediaAgainstSpecs(meta: MediaMeta, specs: DeliverySpecs): DeliveryIssue[] {
   const issues: DeliveryIssue[] = [];
 
+  if (meta.aspectRatio === "unknown") {
+    issues.push({
+      severity: "error",
+      field: "aspectRatio",
+      message: "Could not determine the aspect ratio of this file.",
+      fix: "Enter the export resolution (e.g. 1080×1920) so it can be validated.",
+    });
+  }
+
   // 1. Aspect ratio check
-  const briefRatioStr = briefAspectRatio.split(" ")[0] ?? briefAspectRatio; // e.g. "9:16"
+  const briefRatioStr = specs.aspectRatio;
   const briefRatio = parseRatio(briefRatioStr);
   const deliveredRatio = parseRatio(meta.aspectRatio);
 
@@ -97,18 +128,19 @@ export async function runDeliveryCheck(params: {
     }
   }
 
-  // 2. Resolution check (min 720p on short side)
+  // 2. Resolution check (min short side from specs)
   const shortSide = Math.min(meta.width, meta.height);
-  if (shortSide > 0 && shortSide < 720) {
+  if (shortSide > 0 && shortSide < specs.minShortSide) {
     issues.push({
       severity: "warn",
       field: "resolution",
-      message: `Resolution ${meta.resolution} is below recommended minimum (720p short side).`,
+      message: `Resolution ${meta.resolution} is below the required minimum (${specs.minShortSide}px short side).`,
       fix: "Re-export at a higher quality setting or use source footage.",
     });
   }
 
   // 3. Duration check
+  const briefDurationSec = specs.durationSec;
   if (briefDurationSec && meta.durationSec !== undefined) {
     const slack = briefDurationSec * 0.2; // ±20%
     if (Math.abs(meta.durationSec - briefDurationSec) > slack) {
@@ -120,6 +152,30 @@ export async function runDeliveryCheck(params: {
       });
     }
   }
+
+  return issues;
+}
+
+/** Strict delivery check against a brief's requirements. */
+export async function runDeliveryCheck(params: {
+  mediaUrl: string;
+  briefAspectRatio: string;  // e.g. "9:16 Vertical (Reels/Shorts)"
+  briefDurationSec?: number;
+}): Promise<DeliveryCheck> {
+  const { mediaUrl, briefAspectRatio, briefDurationSec } = params;
+
+  let meta: MediaMeta;
+  try {
+    meta = await extractVideoMeta(mediaUrl);
+  } catch {
+    meta = { width: 0, height: 0, aspectRatio: "unknown", resolution: "unknown" };
+  }
+
+  const issues = checkMediaAgainstSpecs(meta, {
+    aspectRatio: briefAspectRatio.split(" ")[0] ?? briefAspectRatio,
+    durationSec: briefDurationSec,
+    minShortSide: 720,
+  });
 
   return {
     mediaUrl,

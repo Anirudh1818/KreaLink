@@ -10,6 +10,7 @@ import type { StructuredBrief2 } from "@/lib/ai/schemas";
 import type { CreativeBrief, CreatorProfile } from "@/lib/types";
 import { DEMO_CREATORS } from "@/lib/demoData";
 import { shortlistCreator } from "./engagementStore";
+import { notifyR2Change } from "./events";
 
 const LS_KEY = "krealink-agent-results";
 
@@ -26,6 +27,7 @@ function saveAll(all: AgentShortlistResult[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(all));
   } catch { /* ignore */ }
+  notifyR2Change();
 }
 
 export function getAgentResult(briefId: string): AgentShortlistResult | undefined {
@@ -53,7 +55,7 @@ function toCreativeBrief(b: StructuredBrief2, briefId: string): CreativeBrief {
 }
 
 /** Flatten demo creators to plain CreatorProfile array. */
-function flatCreators(): CreatorProfile[] {
+export function flatCreators(): CreatorProfile[] {
   return DEMO_CREATORS.map((d) => d.creator);
 }
 
@@ -62,8 +64,16 @@ export async function runAutoShortlist(
   briefId: string,
   brief: StructuredBrief2
 ): Promise<AgentShortlistResult> {
-  const creativeBrief = toCreativeBrief(brief, briefId);
-  const ranked = rankCreatorsForBrief2(creativeBrief, flatCreators());
+  return runAutoShortlistForBrief(toCreativeBrief(brief, briefId));
+}
+
+/** Run the agent against an already-structured CreativeBrief. */
+export function runAutoShortlistForBrief(
+  creativeBrief: CreativeBrief,
+  creators: CreatorProfile[] = flatCreators()
+): AgentShortlistResult {
+  const briefId = creativeBrief.id ?? "brief-draft";
+  const ranked = rankCreatorsForBrief2(creativeBrief, creators);
 
   const actions: AgentAction[] = ranked.slice(0, 5).map((match, i) => ({
     id: `action-${briefId}-${match.creator.username}-${i}`,
@@ -104,12 +114,32 @@ export async function runAutoShortlist(
 }
 
 /** Apply accepted actions (auto-shortlist creators in the engagement store). */
-export function applyAcceptedActions(result: AgentShortlistResult): void {
+export function applyAcceptedActions(result: AgentShortlistResult, brief?: CreativeBrief): void {
   for (const action of result.actions) {
     if (action.status === "accepted" && action.type === "shortlist" && action.creatorId) {
-      shortlistCreator(result.briefId, action.creatorId);
+      shortlistCreator(result.briefId, action.creatorId, {
+        campaignTitle: brief?.campaignName,
+        brandName: brief?.brandName,
+        matchScore: action.score,
+        brief,
+      });
     }
   }
+}
+
+/** Accept every pending action and shortlist those creators in one go. */
+export function acceptAllAndApply(result: AgentShortlistResult, brief?: CreativeBrief): AgentShortlistResult {
+  const accepted: AgentShortlistResult = {
+    ...result,
+    actions: result.actions.map((a) => (a.status === "pending" ? { ...a, status: "accepted" } : a)),
+  };
+  const all = loadAll();
+  const idx = all.findIndex((r) => r.briefId === result.briefId);
+  if (idx >= 0) all[idx] = accepted;
+  else all.push(accepted);
+  saveAll(all);
+  applyAcceptedActions(accepted, brief);
+  return accepted;
 }
 
 /** Update a single action status. */

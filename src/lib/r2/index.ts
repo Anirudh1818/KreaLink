@@ -4,3 +4,4 @@ export * from "./versionStore";
 export * from "./licensingStore";
 export * from "./deliveryCheck";
 export * from "./agentStore";
+export * from "./events";

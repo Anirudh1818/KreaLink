@@ -2,7 +2,8 @@
  * KreaLink R2 — Version & Revision Store
  */
 
-import type { Version, FeedbackItem } from "./types";
+import type { Version, FeedbackItem, MediaMeta } from "./types";
+import { notifyR2Change } from "./events";
 
 const LS_KEY = "krealink-versions";
 
@@ -19,6 +20,7 @@ function save(all: Version[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(all));
   } catch { /* ignore */ }
+  notifyR2Change();
 }
 
 export function getVersions(engagementId: string): Version[] {
@@ -57,7 +59,11 @@ export function createVersion(
   return v;
 }
 
-export function submitVersion(versionId: string, mediaUrl: string): Version | null {
+export function submitVersion(
+  versionId: string,
+  mediaUrl: string,
+  mediaMeta?: MediaMeta
+): Version | null {
   const all = load();
   const idx = all.findIndex((v) => v.id === versionId);
   if (idx < 0) return null;
@@ -66,6 +72,7 @@ export function submitVersion(versionId: string, mediaUrl: string): Version | nu
     status: "submitted",
     submittedAt: Date.now(),
     mediaUrl,
+    mediaMeta,
   };
   save(all);
   return all[idx]!;

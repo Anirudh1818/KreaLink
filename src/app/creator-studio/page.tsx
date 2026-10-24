@@ -99,12 +99,12 @@ export default function CreatorStudioPage() {
           if (!engSnap.empty) {
             setEngagements(engSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Engagement) })));
           } else if (typeof window !== "undefined") {
-            const localEngs = localStorage.getItem("krealink-engagements");
+            const localEngs = localStorage.getItem("krealink-legacy-engagements");
             if (localEngs) setEngagements(JSON.parse(localEngs));
           }
         } catch {
           if (typeof window !== "undefined") {
-            const localEngs = localStorage.getItem("krealink-engagements");
+            const localEngs = localStorage.getItem("krealink-legacy-engagements");
             if (localEngs) setEngagements(JSON.parse(localEngs));
           }
         }
@@ -163,7 +163,7 @@ export default function CreatorStudioPage() {
 
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem("krealink-engagements", JSON.stringify(updatedEngs));
+        localStorage.setItem("krealink-legacy-engagements", JSON.stringify(updatedEngs));
       } catch {
         // ignore
       }

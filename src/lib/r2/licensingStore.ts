@@ -4,6 +4,47 @@
  */
 
 import type { LicenseTerm, LicenseMismatch, LicenseComparison } from "./types";
+import type { CreativeBrief } from "@/lib/types";
+
+const KNOWN_PLATFORMS = ["Instagram", "TikTok", "YouTube", "Web", "Broadcast"];
+
+/**
+ * Derive what a brief needs licensed from its free-text fields.
+ * Defaults (worldwide, 1 year, non-exclusive) apply when the brief is silent.
+ */
+export function licenseRequirementsForBrief(brief: CreativeBrief): LicenseTerm {
+  const text = `${brief.requirements} ${brief.notes ?? ""}`.toLowerCase();
+
+  let territory: LicenseTerm["territory"] = "worldwide";
+  if (!/worldwide|global/.test(text) && /\b(india|usa|uk|europe|eu|apac|regional)\b/.test(text)) {
+    territory = "regional";
+  }
+
+  let duration: LicenseTerm["duration"] = "1year";
+  const dm = text.match(/(\d+)\s*(month|year)/);
+  if (/perpetual|in perpetuity/.test(text)) duration = "perpetual";
+  else if (dm) {
+    const n = parseInt(dm[1]!);
+    const months = dm[2] === "year" ? n * 12 : n;
+    duration = months <= 6 ? "6month" : months <= 12 ? "1year" : months <= 24 ? "2year" : "perpetual";
+  }
+
+  const platformText = brief.platform.toLowerCase();
+  const platforms = KNOWN_PLATFORMS.filter((p) => platformText.includes(p.toLowerCase()));
+
+  return {
+    usageType: brief.commercialUse ? "commercial" : "editorial",
+    territory,
+    duration,
+    platforms: platforms.length > 0 ? platforms : ["Instagram"],
+    exclusivity: /non-exclusive/.test(text) ? "non-exclusive" : /exclusive/.test(text) ? "exclusive" : "non-exclusive",
+  };
+}
+
+/** Compare a creator's offer against a brief in one call. */
+export function compareLicensesForBrief(brief: CreativeBrief, creatorId: string): LicenseComparison {
+  return compareLicenses(brief.id ?? "brief-draft", creatorId, licenseRequirementsForBrief(brief));
+}
 
 /** Hardcoded creator licensing offers (for demo; real data in Firestore). */
 export const CREATOR_LICENSE_OFFERS: Record<string, LicenseTerm> = {

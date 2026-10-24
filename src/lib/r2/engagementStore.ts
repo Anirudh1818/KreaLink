@@ -3,7 +3,9 @@
  * localStorage-first; Firestore sync attempted as side-effect.
  */
 
-import type { Engagement, EngagementStage, EngagementUpdate } from "./types";
+import type { Engagement, EngagementMeta, EngagementStage, EngagementUpdate } from "./types";
+import { PIPELINE_STAGES } from "./types";
+import { notifyR2Change } from "./events";
 
 const LS_KEY = "krealink-engagements";
 
@@ -20,6 +22,7 @@ function save(all: Engagement[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(all));
   } catch { /* ignore */ }
+  notifyR2Change();
 }
 
 export function getAllEngagements(): Engagement[] {
@@ -35,7 +38,8 @@ export function getEngagementsForBrief(briefId: string): Engagement[] {
 }
 
 export function getEngagementsForCreator(creatorId: string): Engagement[] {
-  return load().filter((e) => e.creatorId === creatorId);
+  const id = creatorId.toLowerCase();
+  return load().filter((e) => e.creatorId.toLowerCase() === id);
 }
 
 export function upsertEngagement(eng: Engagement): Engagement {
@@ -71,7 +75,12 @@ export function advanceStage(
 }
 
 /** Create an engagement if it doesn't exist yet (shortlisting). */
-export function shortlistCreator(briefId: string, creatorId: string): Engagement {
+export function shortlistCreator(
+  briefId: string,
+  creatorId: string,
+  meta: EngagementMeta = {},
+  by: EngagementUpdate["by"] = "system"
+): Engagement {
   const id = `${briefId}-${creatorId}`;
   const existing = getEngagement(id);
   if (existing) return existing;
@@ -81,11 +90,31 @@ export function shortlistCreator(briefId: string, creatorId: string): Engagement
     briefId,
     creatorId,
     stage: "shortlisted",
-    history: [{ at: now, stage: "shortlisted", by: "system" }],
+    history: [{ at: now, stage: "shortlisted", by }],
+    ...meta,
     createdAt: now,
     updatedAt: now,
   };
   return upsertEngagement(eng);
+}
+
+/** Position of a stage on the canonical tracker ("selected" sits with "accepted"). */
+export function stageIndex(stage: EngagementStage): number {
+  if (stage === "selected") return PIPELINE_STAGES.indexOf("accepted");
+  return PIPELINE_STAGES.indexOf(stage);
+}
+
+/** Move one step forward (+1) or back (-1) along PIPELINE_STAGES. */
+export function stepStage(
+  engId: string,
+  dir: 1 | -1,
+  by: EngagementUpdate["by"] = "brand"
+): Engagement | null {
+  const eng = getEngagement(engId);
+  if (!eng) return null;
+  const next = PIPELINE_STAGES[stageIndex(eng.stage) + dir];
+  if (!next) return eng;
+  return advanceStage(engId, next, dir === 1 ? "Advanced manually" : "Moved back manually", by);
 }
 
 export function contactCreator(engId: string): Engagement | null {

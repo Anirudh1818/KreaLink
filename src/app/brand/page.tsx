@@ -27,8 +27,54 @@ import {
 import { rankCreatorsForBrief2, MatchResult2 } from "@/lib/ai/matchingEngine2";
 import { BriefReadiness, ClarificationQuestion, StructuredBrief2 } from "@/lib/ai/schemas";
 import { DEMO_BRAND, DEMO_BRIEFS, DEMO_CREATORS } from "@/lib/demoData";
+import {
+  CREATOR_LICENSE_OFFERS,
+  PIPELINE_STAGES,
+  STAGE_LABEL,
+  acceptAllAndApply,
+  compareLicensesForBrief,
+  getEngagementsForBrief,
+  getLatestVersion,
+  runAutoShortlistForBrief,
+  shortlistCreator,
+  stageIndex,
+  stepStage,
+  type AgentShortlistResult,
+  type LicenseTerm,
+} from "@/lib/r2";
+import { useR2Revision } from "@/lib/r2/useR2";
 
-type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "profile";
+type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "pipeline" | "profile";
+
+const BRAND_TABS: { key: BrandTab; label: string }[] = [
+  { key: "briefs", label: "Briefs" },
+  { key: "matches", label: "Matches" },
+  { key: "engagements", label: "Engagements" },
+  { key: "pipeline", label: "Pipeline (R2)" },
+];
+
+const LICENSE_FIELDS: { key: keyof LicenseTerm; label: string }[] = [
+  { key: "usageType", label: "Usage" },
+  { key: "territory", label: "Territory" },
+  { key: "duration", label: "Duration" },
+  { key: "platforms", label: "Platforms" },
+  { key: "exclusivity", label: "Exclusivity" },
+];
+
+const SUBSCORE_LABELS: { key: keyof MatchResult2["subscores"]; label: string }[] = [
+  { key: "contentType", label: "Content type" },
+  { key: "skills", label: "Skills" },
+  { key: "tools", label: "AI tools" },
+  { key: "specialization", label: "Specialization" },
+  { key: "format", label: "Format" },
+  { key: "commercialUse", label: "Commercial use" },
+  { key: "portfolioEvidence", label: "Portfolio evidence" },
+  { key: "industryAesthetic", label: "Industry aesthetic" },
+];
+
+function formatLicenseValue(v: LicenseTerm[keyof LicenseTerm]): string {
+  return Array.isArray(v) ? v.join(", ") : v;
+}
 
 export default function BrandDashboardPage() {
   const { user } = useAuth();
@@ -37,7 +83,7 @@ export default function BrandDashboardPage() {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const tabParam = urlParams.get("tab") as BrandTab;
-      if (tabParam && ["briefs", "create-brief", "matches", "engagements", "profile"].includes(tabParam)) {
+      if (tabParam && ["briefs", "create-brief", "matches", "engagements", "pipeline", "profile"].includes(tabParam)) {
         return tabParam;
       }
     }
@@ -58,9 +104,42 @@ export default function BrandDashboardPage() {
     return [];
   }, [selectedBrief, creators]);
 
+  // R2 engagements for the selected brief (re-read whenever the store changes)
+  const r2Revision = useR2Revision();
+  const selectedBriefId = selectedBrief?.id ?? "brief-draft";
+  const r2Engagements = useMemo(
+    () => (r2Revision ? getEngagementsForBrief(selectedBriefId) : []),
+    [r2Revision, selectedBriefId]
+  );
+  const shortlistedUsernames = useMemo(
+    () => new Set(r2Engagements.map((e) => e.creatorId.toLowerCase())),
+    [r2Engagements]
+  );
+
+  // Auto-Shortlist Agent
+  const [agentResult, setAgentResult] = useState<AgentShortlistResult | null>(null);
+  const [showShortlistOnly, setShowShortlistOnly] = useState(false);
+
+  function handleRunAutoShortlist() {
+    if (!selectedBrief) return;
+    const result = runAutoShortlistForBrief(selectedBrief, creators);
+    setAgentResult(acceptAllAndApply(result, selectedBrief));
+    setShowShortlistOnly(true);
+    setSelectedMatchUsername(result.actions[0]?.creatorId ?? null);
+  }
+
+  const visibleMatches = showShortlistOnly
+    ? matchedResults.filter((m) => shortlistedUsernames.has(m.creator.username.toLowerCase()))
+    : matchedResults;
+
   // Selected Creator for Find Creators inspection panel (Screen 2)
-  const [selectedMatchIdx, setSelectedMatchIdx] = useState<number>(0);
-  const activeInspectMatch: MatchResult2 | null = matchedResults[selectedMatchIdx] || matchedResults[0] || null;
+  const [selectedMatchUsername, setSelectedMatchUsername] = useState<string | null>(null);
+  const activeInspectMatch: MatchResult2 | null =
+    visibleMatches.find((m) => m.creator.username === selectedMatchUsername) || visibleMatches[0] || null;
+  const activeLicense =
+    activeInspectMatch && selectedBrief
+      ? compareLicensesForBrief(selectedBrief, activeInspectMatch.creator.username)
+      : null;
 
   // AI Brief Builder Prompt State
   const [aiPrompt, setAiPrompt] = useState(() => {
@@ -244,12 +323,12 @@ export default function BrandDashboardPage() {
           if (!engSnap.empty) {
             setEngagements(engSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Engagement) })));
           } else if (typeof window !== "undefined") {
-            const localEngs = localStorage.getItem("krealink-engagements");
+            const localEngs = localStorage.getItem("krealink-legacy-engagements");
             if (localEngs) setEngagements(JSON.parse(localEngs));
           }
         } catch {
           if (typeof window !== "undefined") {
-            const localEngs = localStorage.getItem("krealink-engagements");
+            const localEngs = localStorage.getItem("krealink-legacy-engagements");
             if (localEngs) {
               try { setEngagements(JSON.parse(localEngs)); } catch { /* ignore */ }
             }
@@ -443,7 +522,21 @@ export default function BrandDashboardPage() {
         return updated;
       });
 
-      setInviteFeedback("Invitation successfully sent!");
+      // R2: every invite opens an engagement in the pipeline
+      const invitedMatch = matchedResults.find((m) => m.creator.username === invitingCreator.username);
+      shortlistCreator(
+        selectedBriefId,
+        invitingCreator.username,
+        {
+          campaignTitle: newInvite.campaignTitle,
+          brandName: brand.name,
+          matchScore: invitedMatch?.overallScore,
+          brief: selectedBrief ?? undefined,
+        },
+        "brand"
+      );
+
+      setInviteFeedback("Invitation sent — engagement added to the pipeline.");
       setTimeout(() => {
         setInvitingCreator(null);
         setInviteFeedback("");
@@ -473,7 +566,7 @@ export default function BrandDashboardPage() {
 
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem("krealink-engagements", JSON.stringify(updatedEngs));
+        localStorage.setItem("krealink-legacy-engagements", JSON.stringify(updatedEngs));
       } catch {
         // ignore
       }
@@ -520,7 +613,7 @@ export default function BrandDashboardPage() {
     setEngagements(updatedEngs);
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem("krealink-engagements", JSON.stringify(updatedEngs));
+        localStorage.setItem("krealink-legacy-engagements", JSON.stringify(updatedEngs));
       } catch {
         // ignore
       }
@@ -552,6 +645,34 @@ export default function BrandDashboardPage() {
 
   return (
     <AppShell>
+      {/* Brand Hub tabs */}
+      <div className="max-w-7xl mx-auto mb-5">
+        <nav className="kl-glass-tabs inline-flex flex-wrap items-center gap-1 p-1" aria-label="Brand Hub sections">
+          {BRAND_TABS.map((t) => {
+            const active = activeTab === t.key || (t.key === "briefs" && activeTab === "create-brief");
+            return (
+              <button
+                key={t.key}
+                type="button"
+                aria-current={active ? "page" : undefined}
+                onClick={() => {
+                  setActiveTab(t.key);
+                  window.history.replaceState(null, "", `/brand?tab=${t.key}`);
+                }}
+                className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  active ? "kl-btn-lime" : "text-white/65 hover:text-white"
+                }`}
+              >
+                {t.label}
+                {t.key === "pipeline" && r2Engagements.length > 0 && (
+                  <span className="ml-1.5 tabular-nums opacity-70">{r2Engagements.length}</span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
       {/* ======================================================== */}
       {/* SCREEN 1: BRAND DASHBOARD & AI BRIEF BUILDER */}
       {/* ======================================================== */}
@@ -934,25 +1055,38 @@ export default function BrandDashboardPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  className="px-4 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold shadow-sm"
+                  onClick={() => setShowShortlistOnly(false)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${
+                    !showShortlistOnly
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
                 >
-                  Recommended ({matchedResults.length || 12})
+                  Recommended ({matchedResults.length})
                 </button>
                 <button
                   type="button"
-                  className="px-4 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-semibold"
+                  onClick={() => setShowShortlistOnly(true)}
+                  disabled={shortlistedUsernames.size === 0}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition disabled:opacity-50 ${
+                    showShortlistOnly
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
                 >
-                  All Creators (48)
-                </button>
-                <button
-                  type="button"
-                  className="px-4 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-semibold"
-                >
-                  Saved (3)
+                  Shortlisted ({shortlistedUsernames.size})
                 </button>
               </div>
 
               <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={handleRunAutoShortlist}
+                  disabled={!selectedBrief || creators.length === 0}
+                  className="kl-btn-lime px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-50"
+                >
+                  🤖 Run Auto-Shortlist
+                </button>
                 <span className="text-slate-400">Sort by:</span>
                 <select className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white outline-none">
                   <option>Best Match</option>
@@ -968,17 +1102,45 @@ export default function BrandDashboardPage() {
               </div>
             </div>
 
+            {agentResult && agentResult.briefId === selectedBriefId && (
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-xs">
+                <span className="text-base">🤖</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-emerald-900">{agentResult.summary}</p>
+                  <p className="text-emerald-800/80">
+                    Shortlisted {agentResult.actions.length} creators into the pipeline. {agentResult.nextStep}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pipeline")}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition"
+                >
+                  View pipeline →
+                </button>
+              </div>
+            )}
+
             {/* 2-Column Split: Ranked List (Left) + Detailed Inspection Panel (Right) */}
             <div className="grid gap-6 lg:grid-cols-12">
               {/* Left Column: Ranked Creator Cards (7 Cols) */}
               <div className="lg:col-span-7 space-y-4">
-                {matchedResults.map((match, idx) => {
-                  const isSelected = selectedMatchIdx === idx;
+                {visibleMatches.length === 0 && (
+                  <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">
+                    {showShortlistOnly
+                      ? "No creators shortlisted for this brief yet. Run the Auto-Shortlist agent or invite a creator."
+                      : "No creators to rank yet."}
+                  </p>
+                )}
+                {visibleMatches.map((match) => {
                   const c = match.creator;
+                  const isSelected = activeInspectMatch?.creator.username === c.username;
+                  const rank = matchedResults.indexOf(match) + 1;
+                  const isShortlisted = shortlistedUsernames.has(c.username.toLowerCase());
                   return (
                     <div
                       key={c.username}
-                      onClick={() => setSelectedMatchIdx(idx)}
+                      onClick={() => setSelectedMatchUsername(c.username)}
                       className={`p-4 rounded-2xl border transition cursor-pointer ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-50/20 shadow-md ring-2 ring-emerald-500/20"
@@ -988,7 +1150,7 @@ export default function BrandDashboardPage() {
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-sm font-bold text-slate-400">
-                            #{idx + 1}
+                            #{rank}
                           </span>
                           <div className="h-12 w-12 rounded-full overflow-hidden bg-slate-200 shrink-0 border border-slate-200">
                             {c.profilePhoto ? (
@@ -1012,6 +1174,11 @@ export default function BrandDashboardPage() {
                                 {c.name}
                               </h4>
                               <span className="h-2 w-2 rounded-full bg-emerald-500" title="Online now" />
+                              {isShortlisted && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-lime-100 text-lime-800 text-[9px] font-bold uppercase tracking-wide">
+                                  Shortlisted
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-slate-500">{c.specialization}</p>
                             <p className="text-[10px] text-slate-400">Bangalore, India · Online now</p>
@@ -1140,38 +1307,127 @@ export default function BrandDashboardPage() {
                       </span>
                     </div>
 
-                    <div className="space-y-1.5 text-xs text-slate-700">
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>Strong portfolio in {activeInspectMatch.creator.specialization}</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>Style aligns with clean, premium, natural aesthetic</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>Experienced in short-form video content for Instagram/TikTok</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>Offers worldwide commercial usage rights</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-emerald-600 font-bold">✓</span>
-                        <span>Available within your timeline</span>
-                      </div>
-                    </div>
+                    <p className="text-xs text-slate-700 leading-relaxed">{activeInspectMatch.whyExplanation}</p>
+
+                    {activeInspectMatch.evidencePoints.length > 0 && (
+                      <ul className="space-y-1.5 text-xs text-slate-700">
+                        {activeInspectMatch.evidencePoints.slice(0, 5).map((ev, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <span>
+                              {ev.signal}
+                              <span className="ml-1 text-[10px] text-slate-400">({ev.level})</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
                     {/* Potential Gaps Yellow Alert */}
-                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                      <span className="font-bold">Potential gaps: </span>
-                      <span>
-                        {activeInspectMatch.gaps[0]?.message ||
-                          "No experience with 3D product animation (if required). Typically works in 15-30s videos (your brief is 15s - good fit)"}
-                      </span>
-                    </div>
+                    {activeInspectMatch.gaps.length > 0 ? (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-1">
+                        <span className="font-bold block">Potential gaps:</span>
+                        {activeInspectMatch.gaps.slice(0, 3).map((g, i) => (
+                          <p key={i}>
+                            <span className="font-mono text-[9px] font-bold mr-1">{g.severity}</span>
+                            {g.message}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-emerald-700 font-semibold">No capability gaps detected for this brief.</p>
+                    )}
                   </div>
+
+                  {/* Full factor breakdown */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+                    <h4 className="text-xs font-bold font-mono text-slate-700 uppercase tracking-wider">
+                      Factor breakdown
+                    </h4>
+                    {SUBSCORE_LABELS.map(({ key, label }) => {
+                      const v = activeInspectMatch.subscores[key];
+                      return (
+                        <div key={key} className="flex items-center gap-2 text-[11px] text-slate-600">
+                          <span className="w-28 shrink-0">{label}</span>
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${v >= 70 ? "bg-emerald-500" : v >= 40 ? "bg-amber-400" : "bg-rose-400"}`}
+                              style={{ width: `${v}%` }}
+                            />
+                          </div>
+                          <span className="w-8 text-right font-bold tabular-nums">{v}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* License Compatibility */}
+                  {activeLicense && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-xs font-bold font-mono text-slate-700 uppercase tracking-wider">
+                          License compatibility
+                        </h4>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            !activeLicense.compatible
+                              ? "bg-rose-100 text-rose-700"
+                              : activeLicense.mismatches.length > 0
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {!activeLicense.compatible
+                            ? "⚠ Blocking conflict"
+                            : activeLicense.mismatches.length > 0
+                            ? "⚠ Advisory"
+                            : "✓ Compatible"}
+                        </span>
+                      </div>
+
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400">
+                            <th className="font-semibold pb-1">Term</th>
+                            <th className="font-semibold pb-1">Brief needs</th>
+                            <th className="font-semibold pb-1">Creator offers</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {LICENSE_FIELDS.map(({ key, label }) => {
+                            const mismatch = activeLicense.mismatches.find((m) => m.field === key);
+                            return (
+                              <tr key={key} className="border-t border-slate-100">
+                                <td className="py-1.5 text-slate-500">{label}</td>
+                                <td className="py-1.5 font-mono text-slate-800">
+                                  {formatLicenseValue(activeLicense.brandRequires[key])}
+                                </td>
+                                <td
+                                  className={`py-1.5 font-mono ${
+                                    mismatch
+                                      ? mismatch.severity === "blocking"
+                                        ? "text-rose-600 font-bold"
+                                        : "text-amber-700 font-bold"
+                                      : "text-slate-800"
+                                  }`}
+                                  title={mismatch ? `${mismatch.severity}: ${mismatch.creatorOffers}` : undefined}
+                                >
+                                  {formatLicenseValue(activeLicense.creatorOffers[key])}
+                                  {mismatch && ` ⚠ ${mismatch.severity}`}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {!CREATOR_LICENSE_OFFERS[activeInspectMatch.creator.username] && (
+                        <p className="text-[10px] text-slate-400">
+                          This creator hasn&apos;t published custom terms — showing platform default licence.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2 pt-2">
@@ -1572,6 +1828,129 @@ export default function BrandDashboardPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* SCREEN 4: R2 PIPELINE (localStorage engagements) */}
+      {/* ======================================================== */}
+      {activeTab === "pipeline" && (
+        <div className="space-y-6 max-w-7xl mx-auto">
+          <div className="kl-header p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg md:text-xl font-black">Engagement Pipeline</h2>
+              <p className="text-xs text-white/60 mt-0.5">
+                Shortlisted → Contacted → Accepted → In Production → Revision → Delivered → Approved
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={selectedBriefId}
+                onChange={(e) => setSelectedBrief(briefs.find((b) => b.id === e.target.value) ?? null)}
+                className="kl-pill-dark px-3 py-1.5 text-xs font-semibold outline-none"
+                aria-label="Brief"
+              >
+                {briefs.map((b) => (
+                  <option key={b.id} value={b.id} className="bg-[#0c1017]">
+                    {b.campaignName}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleRunAutoShortlist}
+                disabled={!selectedBrief || creators.length === 0}
+                className="kl-btn-lime px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-50"
+              >
+                🤖 Run Auto-Shortlist
+              </button>
+              <Link
+                href={`/pipeline?brief=${encodeURIComponent(selectedBriefId)}`}
+                className="kl-pill-dark px-4 py-1.5 text-xs font-bold hover:text-white"
+              >
+                Open full pipeline →
+              </Link>
+            </div>
+          </div>
+
+          <div className="kl-card p-5 text-slate-900 space-y-3">
+            {r2Engagements.length === 0 ? (
+              <p className="py-8 text-center text-xs text-slate-500">
+                No engagements for this brief yet. Run the Auto-Shortlist agent or invite a creator from Matches.
+              </p>
+            ) : (
+              r2Engagements.map((eng) => {
+                const creator = creators.find((c) => c.username.toLowerCase() === eng.creatorId.toLowerCase());
+                const idx = stageIndex(eng.stage);
+                const latest = getLatestVersion(eng.id);
+                const license = selectedBrief ? compareLicensesForBrief(selectedBrief, eng.creatorId) : null;
+                return (
+                  <div key={eng.id} className="kl-card-soft p-4 flex flex-col lg:flex-row lg:items-center gap-4">
+                    <div className="lg:w-56 min-w-0">
+                      <p className="text-sm font-bold truncate">{creator?.name ?? `@${eng.creatorId}`}</p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        @{eng.creatorId}
+                        {eng.matchScore !== undefined && ` · ${eng.matchScore}% match`}
+                      </p>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        {PIPELINE_STAGES.map((s, i) => (
+                          <div
+                            key={s}
+                            title={STAGE_LABEL[s]}
+                            className={`h-1.5 flex-1 rounded-full ${i <= idx ? "bg-emerald-500" : "bg-slate-200"}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="font-bold text-emerald-700">{STAGE_LABEL[eng.stage]}</span>
+                        {latest && (
+                          <span className="text-slate-500">
+                            · v{latest.n} {latest.status.replace("_", " ")}
+                          </span>
+                        )}
+                        {license && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              !license.compatible
+                                ? "bg-rose-100 text-rose-700"
+                                : license.mismatches.length > 0
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-emerald-100 text-emerald-700"
+                            }`}
+                            title={license.mismatches.map((m) => `${m.field}: ${m.severity}`).join(", ") || undefined}
+                          >
+                            {!license.compatible ? "⚠ License conflict" : license.mismatches.length > 0 ? "⚠ License advisory" : "✓ License OK"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => stepStage(eng.id, -1)}
+                        disabled={idx <= 0}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-white disabled:opacity-40"
+                      >
+                        ← Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => stepStage(eng.id, 1)}
+                        disabled={idx < 0 || idx >= PIPELINE_STAGES.length - 1}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40"
+                      >
+                        Advance →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}

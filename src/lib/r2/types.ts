@@ -3,6 +3,8 @@
  * Engagement pipeline, versioning, licensing and delivery check.
  */
 
+import type { CreativeBrief } from "@/lib/types";
+
 /* ------------------------------------------------------------------ */
 /* Engagement pipeline                                                 */
 /* ------------------------------------------------------------------ */
@@ -17,6 +19,29 @@ export type EngagementStage =
   | "delivered"
   | "accepted_final"
   | "changes_requested";
+
+/** Canonical happy-path order shown in stage trackers. */
+export const PIPELINE_STAGES: EngagementStage[] = [
+  "shortlisted",
+  "contacted",
+  "accepted",
+  "production",
+  "changes_requested",
+  "delivered",
+  "accepted_final",
+];
+
+export const STAGE_LABEL: Record<EngagementStage, string> = {
+  shortlisted: "Shortlisted",
+  contacted: "Contacted",
+  accepted: "Accepted",
+  declined: "Declined",
+  selected: "Selected",
+  production: "In Production",
+  changes_requested: "Revision",
+  delivered: "Delivered",
+  accepted_final: "Approved",
+};
 
 export type EngagementUpdate = {
   at: number; // epoch ms
@@ -33,9 +58,16 @@ export type Engagement = {
   history: EngagementUpdate[];
   scope?: string;        // agreed scope text
   timeline?: string;
+  campaignTitle?: string;
+  brandName?: string;
+  matchScore?: number;
+  brief?: CreativeBrief; // snapshot so the creator side can validate against specs
   createdAt: number;
   updatedAt: number;
 };
+
+/** Optional context captured when an engagement is first created. */
+export type EngagementMeta = Pick<Engagement, "campaignTitle" | "brandName" | "matchScore" | "brief">;
 
 /* ------------------------------------------------------------------ */
 /* Versions & revisions                                                */
@@ -89,6 +121,13 @@ export type DeliveryIssue = {
   field: "aspectRatio" | "resolution" | "duration" | "fileSize" | "format";
   message: string;
   fix: string;
+};
+
+/** Technical specs a deliverable is validated against (derived from a brief). */
+export type DeliverySpecs = {
+  aspectRatio: string;   // e.g. "9:16"
+  durationSec?: number;
+  minShortSide: number;  // px
 };
 
 export type DeliveryCheck = {
