@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 import { CreatorProfile, PortfolioItem, INVITATION_STATUS } from "@/lib/types";
 import { DEMO_CREATORS } from "@/lib/demoData";
 
@@ -244,20 +244,21 @@ export default function CreatorProfilePage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-[#07080c] text-white">
-        <Navbar />
+      <AppShell noSidebar>
+      <div className="min-h-screen bg-[#07080c] text-white">
         <div className="mx-auto max-w-7xl px-5 py-24 text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
           <p className="mt-4 text-xs font-mono uppercase tracking-wider text-slate-400">Loading AI Creator Portfolio...</p>
         </div>
-      </main>
+      </div>
+      </AppShell>
     );
   }
 
   if (creatorNotFound) {
     return (
-      <main className="min-h-screen bg-[#07080c] text-white">
-        <Navbar />
+      <AppShell noSidebar>
+      <div className="min-h-screen bg-[#07080c] text-white">
         <div className="mx-auto max-w-2xl px-5 py-24 text-center">
           <h2 className="text-3xl font-extrabold text-white">Creator Not Found</h2>
           <p className="mt-2 text-sm text-slate-400">
@@ -272,13 +273,14 @@ export default function CreatorProfilePage() {
             </Link>
           </div>
         </div>
-      </main>
+      </div>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#07080c] text-white">
-      <Navbar />
+    <AppShell noSidebar>
+    <div className="min-h-screen bg-[#07080c] text-white">
 
       {/* ======================================================== */}
       {/* 1. EDITORIAL TALENT HEADER */}
@@ -894,6 +896,7 @@ export default function CreatorProfilePage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
+    </AppShell>
   );
 }

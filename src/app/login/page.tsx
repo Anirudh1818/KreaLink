@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { AppShell } from "@/components/AppShell";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -77,15 +77,8 @@ function LoginInner() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh)] flex-col bg-ink">
-      {/* Minimal top bar */}
-      <div className="flex h-14 items-center gap-2 px-5">
-        <Link href="/" className="flex items-center gap-2">
-          <KreaMark size={28} />
-          <span className="text-[14px] font-semibold text-white">KreaLink</span>
-        </Link>
-      </div>
-
+    <AppShell noSidebar>
+    <div className="flex min-h-[calc(100dvh-3.5rem)] flex-col bg-ink">
       <div className="flex flex-1 items-center justify-center px-5 py-12">
         <div className="w-full max-w-[400px]">
           {/* Forest header card */}
@@ -220,6 +213,7 @@ function LoginInner() {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 }
 
