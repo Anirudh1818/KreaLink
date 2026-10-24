@@ -40,6 +40,9 @@ function Hero() {
           <Button variant="glass" size="lg" icon="compass" href="/discover">
             Explore Creators
           </Button>
+          <Button variant="glass" size="lg" icon="layers" href="/pipeline">
+            View Live Pipeline →
+          </Button>
         </div>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[12px] text-white/45">

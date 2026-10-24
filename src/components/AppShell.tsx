@@ -17,6 +17,7 @@ const TOP_LINKS: NavLink[] = [
   { href: "/discover", label: "Discover", icon: "compass" },
   { href: "/brand", label: "Brand Hub", icon: "briefcase" },
   { href: "/creator-studio", label: "Studio", icon: "film" },
+  { href: "/pipeline", label: "Pipeline", icon: "layers" },
 ];
 
 const SIDEBAR_TOOLS: NavLink[] = [
