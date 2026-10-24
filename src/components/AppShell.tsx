@@ -21,13 +21,14 @@ const STUDIO: NavLink = { href: "/creator-studio", label: "Studio", icon: "film"
 const CREATOR_PORTAL: NavLink = { href: "/creator", label: "Creator Portal", icon: "film" };
 const PIPELINE: NavLink = { href: "/pipeline", label: "Pipeline", icon: "layers" };
 const ADMIN: NavLink = { href: "/admin", label: "Admin", icon: "shield" };
+const TOP: NavLink = { href: "/top-creators", label: "Top Creators", icon: "star" };
 
 /** Navigation follows the trusted role; anonymous visitors see the demo set. */
 function topLinksFor(account: Account): NavLink[] {
-  if (account.isAdmin) return [ADMIN, DISCOVER];
-  if (account.role === "brand") return [DISCOVER, BRAND_HUB, PIPELINE];
-  if (account.role === "creator") return [DISCOVER, CREATOR_PORTAL, STUDIO];
-  return [DISCOVER, BRAND_HUB, STUDIO, PIPELINE];
+  if (account.isAdmin) return [ADMIN, DISCOVER, TOP];
+  if (account.role === "brand") return [DISCOVER, TOP, BRAND_HUB, PIPELINE];
+  if (account.role === "creator") return [DISCOVER, TOP, CREATOR_PORTAL, STUDIO];
+  return [DISCOVER, TOP, BRAND_HUB, STUDIO, PIPELINE];
 }
 
 /** Sidebar tools for each portal — roles never see each other's tools. */
@@ -50,12 +51,14 @@ const SIDEBAR_BY_KIND: Record<SidebarKind, NavLink[]> = {
     { href: "/creator-studio?tab=engagements", label: "Opportunities", icon: "inbox" },
     { href: "/join-creator", label: "Public Profile", icon: "user" },
     { href: "/creator-studio?tab=licensing", label: "Licensing Terms", icon: "scale" },
+    { href: "/creator-studio?tab=reviews", label: "Reviews & Ranking", icon: "star" },
     { href: "/creator/verification", label: "Verification", icon: "shield" },
   ],
   admin: [
     { href: "/admin", label: "Overview", icon: "chart" },
     { href: "/admin/verifications", label: "Verification Queue", icon: "shield" },
     { href: "/admin/users", label: "All Accounts", icon: "users" },
+    { href: "/admin/reviews", label: "Reviews", icon: "star" },
     { href: "/admin/audit", label: "Audit Trail", icon: "history" },
   ],
 };

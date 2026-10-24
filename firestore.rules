@@ -285,7 +285,7 @@ service cloud.firestore {
 
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly(['action', 'actorUid', 'targetUid', 'fromStatus', 'toStatus', 'reason', 'at'])
-        && request.resource.data.action in ['verification.decision', 'evidence.view', 'evidence.purge']
+        && request.resource.data.action in ['verification.decision', 'evidence.view', 'evidence.purge', 'review.remove']
         && request.resource.data.actorUid == me()
         && str(request.resource.data.targetUid, 1, 128)
         && request.resource.data.targetUid != me()
@@ -500,6 +500,51 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin() || (signedIn() && resource.data.brandOwnerUid == me());
+    }
+
+    // ------------------------------------------------------------------------
+    // reviews/{engagementId} — brand reviews of delivered work.
+    // One per engagement (doc id = engagement id), only after the brand has
+    // approved the final delivery, immutable, admin removal is audited.
+    // ------------------------------------------------------------------------
+    match /reviews/{reviewId} {
+      function rating(v) {
+        return v is int && v >= 1 && v <= 5;
+      }
+
+      function engagement() {
+        return get(docPath('pipelineEngagements', reviewId)).data;
+      }
+
+      allow read: if true;
+
+      allow create: if isVerified('brand')
+        && request.resource.data.keys().hasOnly(['engagementId', 'creatorUsername', 'brandName', 'brandOwnerUid',
+                                                 'campaignTitle', 'comment', 'rating', 'quality', 'communication',
+                                                 'timeliness', 'createdAt'])
+        && request.resource.data.engagementId == reviewId
+        && request.resource.data.brandOwnerUid == me()
+        && str(request.resource.data.creatorUsername, 1, 60)
+        && str(request.resource.data.brandName, 1, 120)
+        && str(request.resource.data.campaignTitle, 1, 160)
+        && str(request.resource.data.comment, 10, 1000)
+        && rating(request.resource.data.rating)
+        && rating(request.resource.data.quality)
+        && rating(request.resource.data.communication)
+        && rating(request.resource.data.timeliness)
+        && request.resource.data.createdAt == request.time
+        && exists(docPath('pipelineEngagements', reviewId))
+        && engagement().brandOwnerUid == me()
+        && engagement().stage == 'accepted_final'
+        && engagement().creatorId == request.resource.data.creatorUsername;
+
+      allow update: if false;
+
+      allow delete: if isAdmin()
+        && !exists(docPath('auditLogs', 'review-remove-' + reviewId))
+        && existsAfter(docPath('auditLogs', 'review-remove-' + reviewId))
+        && getAfter(docPath('auditLogs', 'review-remove-' + reviewId)).data.action == 'review.remove'
+        && getAfter(docPath('auditLogs', 'review-remove-' + reviewId)).data.actorUid == me();
     }
 
     // ------------------------------------------------------------------------

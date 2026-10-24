@@ -475,3 +475,64 @@ describe("pipelineEngagements: shared brand↔creator pipeline (item 5)", () => 
     await assertSucceeds(updateDoc(ref_, { stage: "declined" }));
   });
 });
+
+describe("reviews: only from approved engagements, immutable, audited removal", () => {
+  function shared(id: string, stage: string) {
+    return { id, briefId: "brief-1", creatorId: "kyle", stage, history: [], brandOwnerUid: BRAND_V.uid, creatorOwnerUid: CREATOR_V.uid, versions: [], createdAt: 1, updatedAt: 1 };
+  }
+  function rv(extra: Record<string, unknown> = {}) {
+    return {
+      engagementId: "brief-1-kyle", creatorUsername: "kyle", brandName: "Verified Co", brandOwnerUid: BRAND_V.uid,
+      campaignTitle: "Launch", comment: "Excellent work, delivered on time.", rating: 5, quality: 5, communication: 4, timeliness: 5,
+      createdAt: serverTimestamp(), ...extra,
+    };
+  }
+
+  beforeEach(async () => {
+    await seed(async (d) => {
+      await setDoc(doc(d, "pipelineEngagements", "brief-1-kyle"), shared("brief-1-kyle", "accepted_final"));
+      await setDoc(doc(d, "pipelineEngagements", "brief-2-kyle"), { ...shared("brief-2-kyle", "production"), briefId: "brief-2" });
+    });
+  });
+
+  it("verified brand can review an engagement it approved; anyone can read it", async () => {
+    await assertSucceeds(setDoc(doc(db(BRAND_V), "reviews", "brief-1-kyle"), rv()));
+    await assertSucceeds(getDoc(doc(anonDb(), "reviews", "brief-1-kyle")));
+  });
+
+  it("one review per engagement and reviews are immutable", async () => {
+    await assertSucceeds(setDoc(doc(db(BRAND_V), "reviews", "brief-1-kyle"), rv()));
+    await assertFails(setDoc(doc(db(BRAND_V), "reviews", "brief-1-kyle"), rv({ rating: 1 })));
+    await assertFails(updateDoc(doc(db(BRAND_V), "reviews", "brief-1-kyle"), { rating: 1 }));
+  });
+
+  it("no reviews before the final delivery is approved", async () => {
+    await assertFails(setDoc(doc(db(BRAND_V), "reviews", "brief-2-kyle"), rv({ engagementId: "brief-2-kyle" })));
+  });
+
+  it("other brands, the creator and anonymous users cannot review", async () => {
+    await assertFails(setDoc(doc(db(BRAND), "reviews", "brief-1-kyle"), rv({ brandOwnerUid: BRAND.uid })));
+    await assertFails(setDoc(doc(db(CREATOR_V), "reviews", "brief-1-kyle"), rv({ brandOwnerUid: CREATOR_V.uid })));
+    await assertFails(setDoc(doc(anonDb(), "reviews", "brief-1-kyle"), rv()));
+  });
+
+  it("ratings must be whole stars 1–5 and match the engagement's creator", async () => {
+    const ref_ = doc(db(BRAND_V), "reviews", "brief-1-kyle");
+    await assertFails(setDoc(ref_, rv({ rating: 6 })));
+    await assertFails(setDoc(ref_, rv({ quality: 0 })));
+    await assertFails(setDoc(ref_, rv({ timeliness: 4.5 })));
+    await assertFails(setDoc(ref_, rv({ creatorUsername: "anya" })));
+    await assertFails(setDoc(ref_, rv({ comment: "ok" })));
+  });
+
+  it("admins remove reviews only with an audit entry; others cannot remove", async () => {
+    await seed(async (d) => { await setDoc(doc(d, "reviews", "brief-1-kyle"), { ...rv(), createdAt: 1 }); });
+    await assertFails(deleteDoc(doc(db(BRAND_V), "reviews", "brief-1-kyle")));
+    await assertFails(deleteDoc(doc(db(ADMIN), "reviews", "brief-1-kyle")));
+    const d = db(ADMIN);
+    const b = writeBatch(d);
+    b.set(doc(d, "auditLogs", "review-remove-brief-1-kyle"), { action: "review.remove", actorUid: ADMIN.uid, targetUid: "brief-1-kyle", reason: "Abusive language", at: serverTimestamp() });
+    b.delete(doc(d, "reviews", "brief-1-kyle"));
+    await assertSucceeds(b.commit());
+  });
+});

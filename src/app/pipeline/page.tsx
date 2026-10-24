@@ -36,6 +36,8 @@ import {
 } from "@/lib/r2";
 import { useR2Revision } from "@/lib/r2/useR2";
 import { AgentReview, AgreedTermsCard, NextStepBanner, ProgressFeed, SelectionPanel } from "@/components/pipeline/PipelineUI";
+import { ReviewForm, ReviewList } from "@/components/reviews/ReviewUI";
+import { useAllReviews } from "@/lib/reviews/store";
 
 // ─── Demo brief ───────────────────────────────────────────────────────────────
 
@@ -262,6 +264,8 @@ function PipelineView() {
   const engStage = selectedEng ? stageIndex(selectedEng.stage) : -1;
 
   const selectedEngId = selectedEng?.id;
+  const { reviews: allReviews } = useAllReviews();
+  const existingReview = selectedEng ? allReviews.find((r) => r.id === selectedEng.id) : undefined;
   const versions = useMemo(() => (rev && selectedEngId ? getVersions(selectedEngId) : []), [rev, selectedEngId]);
   const [activeVersionN, setActiveVersionN] = useState<number | null>(null);
   const activeVersion = versions.find((v) => v.n === activeVersionN) ?? versions[versions.length - 1];
@@ -655,6 +659,14 @@ function PipelineView() {
                           ✓ v{activeVersion.n} approved — engagement complete
                         </div>
                       )}
+
+                      {/* One review per approved engagement; feeds rating + weekly Top 10 */}
+                      {selectedEng?.stage === "accepted_final" &&
+                        (existingReview ? (
+                          <ReviewList reviews={[existingReview]} tone="dark" />
+                        ) : (
+                          <ReviewForm key={selectedEng.id} eng={selectedEng} brandName={BRIEF.brandName ?? "Brand"} tone="dark" />
+                        ))}
                     </div>
                   )}
                 </>

@@ -131,7 +131,8 @@ export type AuditAction =
   | "evidence.view"
   | "evidence.purge"
   | "admin.grant"
-  | "admin.revoke";
+  | "admin.revoke"
+  | "review.remove";
 
 export type AuditLogDoc = {
   action: AuditAction;

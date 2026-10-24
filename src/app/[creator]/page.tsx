@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 import { AppShell } from "@/components/AppShell";
 import { CreatorProfile, PortfolioItem, INVITATION_STATUS } from "@/lib/types";
 import { DEMO_CREATORS } from "@/lib/demoData";
+import { CreatorReviewsSection } from "@/components/reviews/CreatorReviewsSection";
 
 function getParamValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || "";
@@ -788,6 +789,11 @@ export default function CreatorProfilePage() {
           </div>
         )}
       </section>
+
+      {/* Client reviews + weekly ranking */}
+      <div className="mx-auto max-w-7xl px-5 pb-12 md:px-8">
+        <CreatorReviewsSection username={creatorProfile.username || creatorUsername} />
+      </div>
 
       {/* ======================================================== */}
       {/* 3. INVITE CREATOR MODAL */}

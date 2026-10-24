@@ -52,6 +52,8 @@ import { useR2Revision } from "@/lib/r2/useR2";
 import { canPerform } from "@/lib/auth/policy";
 import { PortalAccessBanner, RestrictedNotice } from "@/components/auth/AccountUI";
 import { AgentReview, NextStepBanner, SelectionPanel } from "@/components/pipeline/PipelineUI";
+import { RatingSummary, ReviewForm } from "@/components/reviews/ReviewUI";
+import { useAllReviews } from "@/lib/reviews/store";
 
 type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "pipeline" | "profile";
 
@@ -137,6 +139,13 @@ export default function BrandDashboardPage() {
   );
   const [showShortlistOnly, setShowShortlistOnly] = useState(false);
   const [selectingEngId, setSelectingEngId] = useState<string | null>(null);
+  const { reviews: allReviews } = useAllReviews();
+  const reviewedIds = useMemo(() => new Set(allReviews.map((r) => r.id)), [allReviews]);
+  const reviewsByCreator = useMemo(() => {
+    const m = new Map<string, typeof allReviews>();
+    for (const r of allReviews) m.set(r.creatorUsername.toLowerCase(), [...(m.get(r.creatorUsername.toLowerCase()) ?? []), r]);
+    return m;
+  }, [allReviews]);
   const briefConflicts = useMemo(() => (selectedBrief ? detectBriefConflicts(selectedBrief) : []), [selectedBrief]);
 
   /** Owner ids let engagements with real creator accounts sync across devices. */
@@ -1284,6 +1293,7 @@ export default function BrandDashboardPage() {
                               )}
                             </div>
                             <p className="text-xs text-slate-500">{c.specialization}</p>
+                            <RatingSummary reviews={reviewsByCreator.get(c.username.toLowerCase()) ?? []} />
                             <p className="text-[10px] text-slate-400">Bangalore, India · Online now</p>
                           </div>
                         </div>
@@ -2052,6 +2062,9 @@ export default function BrandDashboardPage() {
                     </div>
                     <div className="w-full basis-full space-y-2">
                       <NextStepBanner eng={eng} side="brand" tone="light" />
+                      {eng.stage === "accepted_final" && !reviewedIds.has(eng.id) && (
+                        <ReviewForm key={eng.id} eng={eng} brandName={brand.name} tone="light" />
+                      )}
                       {selectingEngId === eng.id && eng.stage === "accepted" && selectedBrief && (
                         <SelectionPanel eng={eng} brief={eng.brief ?? selectedBrief} onDone={() => setSelectingEngId(null)} tone="light" />
                       )}

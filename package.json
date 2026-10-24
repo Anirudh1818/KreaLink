@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:rules": "firebase emulators:exec --project demo-krealink --only firestore,storage \"tsx --test tests/rules.test.ts\"",
-    "test:unit": "tsx --test tests/policy.test.ts tests/r2.test.ts",
+    "test:unit": "tsx --test tests/policy.test.ts tests/r2.test.ts tests/ranking.test.ts",
     "test:security": "tsx scripts/test_security_integrity.ts",
     "admin:provision": "tsx scripts/provision-admin.ts",
     "typecheck": "tsc --noEmit -p .",

@@ -27,9 +27,10 @@ import { DEMO_CREATORS } from "@/lib/demoData";
 import { ActiveEngagements, useActiveEngagementCount } from "./ActiveEngagements";
 import { PortalAccessBanner } from "@/components/auth/AccountUI";
 import { LicenseOfferForm } from "./LicenseOfferForm";
+import { CreatorReviewsSection } from "@/components/reviews/CreatorReviewsSection";
 import { registerCreatorOffers } from "@/lib/r2";
 
-type StudioTab = "overview" | "current-projects" | "engagements" | "licensing" | "portfolio" | "skills" | "earnings";
+type StudioTab = "overview" | "current-projects" | "engagements" | "licensing" | "reviews" | "portfolio" | "skills" | "earnings";
 
 export default function CreatorStudioPage() {
   const { user } = useAuth();
@@ -112,7 +113,7 @@ export default function CreatorStudioPage() {
           const urlParams = new URLSearchParams(window.location.search);
           const creatorQuery = urlParams.get("creator");
           const tabParam = urlParams.get("tab");
-        if (tabParam === "engagements" || tabParam === "licensing") setActiveTab(tabParam);
+        if (tabParam === "engagements" || tabParam === "licensing" || tabParam === "reviews") setActiveTab(tabParam);
           const localStored =
             localStorage.getItem("krealink-current-creator") ||
             null;
@@ -341,6 +342,17 @@ export default function CreatorStudioPage() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("reviews")}
+            className={`px-4 py-2 rounded-t-xl transition ${
+              activeTab === "reviews"
+                ? "text-emerald-400 border-b-2 border-emerald-500 font-bold"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Reviews &amp; Ranking
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("portfolio")}
             className={`px-4 py-2 rounded-t-xl transition ${
               activeTab === "portfolio"
@@ -374,7 +386,9 @@ export default function CreatorStudioPage() {
           </button>
         </div>
 
-        {activeTab === "licensing" ? (
+        {activeTab === "reviews" ? (
+          <CreatorReviewsSection username={creatorProfile.username} />
+        ) : activeTab === "licensing" ? (
           <LicenseOfferForm key={creatorProfile.username} creatorUsername={creatorProfile.username} ownerUid={creatorProfile.ownerUid} />
         ) : activeTab === "engagements" ? (
           <ActiveEngagements creatorUsername={creatorProfile.username} />

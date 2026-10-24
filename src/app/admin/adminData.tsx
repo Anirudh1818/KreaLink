@@ -11,6 +11,7 @@ const TABS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/verifications", label: "Verification Queue & Approvals" },
   { href: "/admin/users", label: "All Accounts & Surveillance" },
+  { href: "/admin/reviews", label: "Review Moderation" },
   { href: "/admin/audit", label: "Security & Audit Trail" },
 ];
 

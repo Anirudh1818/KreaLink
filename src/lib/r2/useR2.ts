@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { subscribeR2 } from "./events";
 
-const WATCHED_KEYS = ["krealink-engagements", "krealink-versions", "krealink-agent-results"];
+const WATCHED_KEYS = ["krealink-engagements", "krealink-versions", "krealink-agent-results", "krealink-reviews", "krealink-license-offers"];
 
 function rawSnapshot(): string {
   try {
