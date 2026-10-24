@@ -87,6 +87,18 @@ describe("routing (scenarios 4, 5)", () => {
     assert.deepEqual(decideRoute("/brand/verification", brand), { allow: true });
   });
 
+  it("admins, brands and creators each stay in their own portal", () => {
+    for (const path of ["/brand", "/pipeline", "/creator", "/creator-studio", "/join-creator"]) {
+      assert.deepEqual(decideRoute(path, admin), { allow: false, redirectTo: "/admin" }, `admin → ${path}`);
+    }
+    assert.deepEqual(decideRoute("/pipeline", creator), { allow: false, redirectTo: "/creator" });
+    assert.deepEqual(decideRoute("/join-creator", brand, "verified"), { allow: false, redirectTo: "/brand" });
+    assert.deepEqual(decideRoute("/pipeline", brand, "verified"), { allow: true });
+    assert.deepEqual(decideRoute("/join-creator", creator), { allow: true });
+    // Anonymous visitors can still browse the demo workspaces.
+    assert.deepEqual(decideRoute("/pipeline", anon), { allow: true });
+  });
+
   it("brands must be GSTIN-verified before using the Brand Hub", () => {
     for (const s of ["unverified", "pending_review", "info_required", "rejected", "suspended"] as VerificationStatus[]) {
       assert.deepEqual(decideRoute("/brand", brand, s), { allow: false, redirectTo: "/brand/verification" }, s);

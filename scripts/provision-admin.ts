@@ -67,6 +67,11 @@ async function main() {
 
   if (command === "grant") {
     if (!user.emailVerified) fail(`${email} has not verified their email address.`);
+    // Keep staff and members separate: admins use dedicated accounts.
+    const member = await db.collection("users").doc(user.uid).get();
+    if (member.exists) {
+      fail(`${email} is registered as a ${member.data()?.role}. Create a separate staff account for admin access.`);
+    }
     const requireMfa = process.argv.includes("--require-mfa");
     await db.runTransaction(async (tx: Transaction) => {
       tx.set(admins.doc(user.uid), {

@@ -766,7 +766,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[3px] sm:items-center sm:p-6" onMouseDown={onClose}>
       <div
-        className="animate-pop flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[26px] bg-panel shadow-2xl sm:rounded-[26px]"
+        className="animate-pop flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[26px] bg-panel text-body shadow-2xl sm:rounded-[26px]"
         style={{ maxWidth: width }}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"

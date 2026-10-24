@@ -164,6 +164,11 @@ describe("users: roles are self-selected once, never admin", () => {
     await assertFails(setDoc(doc(db(w), "users", w.uid), newUser(w, "admin")));
   });
 
+  it("an admin (staff) account cannot also register as a brand or creator", async () => {
+    await assertFails(setDoc(doc(db(ADMIN), "users", ADMIN.uid), newUser(ADMIN, "brand", { brandId: "brand-admin-1" })));
+    await assertFails(setDoc(doc(db(ADMIN), "users", ADMIN.uid), newUser(ADMIN, "creator")));
+  });
+
   it("cannot create a users doc for someone else or with a different email", async () => {
     const w: Who = { uid: "fresh-3", email: "fresh3@x.example" };
     await assertFails(setDoc(doc(db(w), "users", "someone-else"), newUser({ ...w, uid: "someone-else" }, "brand")));

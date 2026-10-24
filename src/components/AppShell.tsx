@@ -24,17 +24,41 @@ const ADMIN: NavLink = { href: "/admin", label: "Admin", icon: "shield" };
 
 /** Navigation follows the trusted role; anonymous visitors see the demo set. */
 function topLinksFor(account: Account): NavLink[] {
-  if (account.isAdmin) return [DISCOVER, BRAND_HUB, STUDIO, PIPELINE, ADMIN];
+  if (account.isAdmin) return [ADMIN, DISCOVER];
   if (account.role === "brand") return [DISCOVER, BRAND_HUB, PIPELINE];
   if (account.role === "creator") return [DISCOVER, CREATOR_PORTAL, STUDIO];
   return [DISCOVER, BRAND_HUB, STUDIO, PIPELINE];
 }
 
-const SIDEBAR_TOOLS: NavLink[] = [
-  { href: "/brand?tab=create-brief", label: "New Brief", icon: "chatPlus" },
-  { href: "/brand?tab=matches", label: "Talent Analytics", icon: "chart" },
-  { href: "/brand?tab=matches", label: "Compare Creators", icon: "compare" },
-];
+/** Sidebar tools for each portal — roles never see each other's tools. */
+type SidebarKind = "brand" | "creator" | "admin";
+
+function sidebarKindFor(account: Account): SidebarKind {
+  if (account.isAdmin) return "admin";
+  if (account.role === "creator") return "creator";
+  return "brand"; // brand members and anonymous demo visitors
+}
+
+const SIDEBAR_BY_KIND: Record<SidebarKind, NavLink[]> = {
+  brand: [
+    { href: "/brand?tab=create-brief", label: "New Brief", icon: "chatPlus" },
+    { href: "/brand?tab=matches", label: "Talent Analytics", icon: "chart" },
+    { href: "/brand?tab=matches", label: "Compare Creators", icon: "compare" },
+  ],
+  creator: [
+    { href: "/creator", label: "Creator Portal", icon: "home" },
+    { href: "/creator-studio?tab=engagements", label: "Opportunities", icon: "inbox" },
+    { href: "/join-creator", label: "Public Profile", icon: "user" },
+    { href: "/creator/verification", label: "Verification", icon: "shield" },
+  ],
+  admin: [
+    { href: "/admin", label: "Overview", icon: "chart" },
+    { href: "/admin/verifications", label: "Verification Queue", icon: "shield" },
+    { href: "/admin/users", label: "All Accounts", icon: "users" },
+    { href: "/admin/audit", label: "Audit Trail", icon: "history" },
+  ],
+};
+
 
 /* ------------------------------------------------------------------ */
 /* Brief history (reads localStorage, falls back to demo stubs)       */
@@ -237,6 +261,9 @@ function TopNav({
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const briefHistory = useBriefHistory();
+  const { account } = useAuth();
+  const kind = sidebarKindFor(account);
+  const tools = SIDEBAR_BY_KIND[kind];
 
   return (
     <>
@@ -260,7 +287,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-rail-muted">
             Menu
           </p>
-          {SIDEBAR_TOOLS.map((l) => {
+          {tools.map((l) => {
             const active = pathname.includes(l.href.split("?")[0] ?? "");
             return (
               <Link
@@ -279,6 +306,9 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           })}
         </div>
 
+        {/* Brief history and New Brief CTA are brand-only */}
+        {kind === "brand" ? (
+        <>
         {/* HISTORY section */}
         <div className="mt-5 flex-1 px-3">
           <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-rail-muted">
@@ -316,6 +346,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
             Start New Brief
           </Button>
         </div>
+        </>
+        ) : (
+          <div className="flex-1" />
+        )}
       </aside>
     </>
   );

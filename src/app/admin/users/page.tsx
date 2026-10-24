@@ -7,7 +7,16 @@ import { Button, Modal, Notice } from "@/components/ui/kit";
 import { VerificationBadge } from "@/components/auth/AccountUI";
 import { useAuth } from "@/lib/auth-context";
 import { decideVerification, friendlyAuthError } from "@/lib/auth/accountActions";
-import { STATUS_LABEL, type VerificationStatus } from "@/lib/auth/policy";
+import { ADMIN_TRANSITIONS, STATUS_LABEL, canAdminTransition, type VerificationStatus } from "@/lib/auth/policy";
+
+const ACTION_TEXT: Record<VerificationStatus, string> = {
+  verified: "Approve / reinstate (Verified)",
+  pending_review: "Return to review (Pending Review)",
+  info_required: "Request additional information",
+  rejected: "Reject application",
+  suspended: "Suspend account (blocks all commercial actions)",
+  unverified: "Reset",
+};
 import { AdminHeader, fmtTime, useAllUsers, useVerifications, type WithId } from "../adminData";
 import type { UserDoc, VerificationDoc } from "@/lib/auth/schema";
 
@@ -49,67 +58,32 @@ export default function AdminUsersSurveillancePage() {
 
   async function handleConfirmDecision() {
     if (!actingOn || !user) return;
+    const target = actingOn.verification;
+    // Decisions apply only to real, submitted applications — never invent one.
+    if (!target) {
+      setNotice({ tone: "danger", text: "This account hasn't submitted a verification application yet, so there is nothing to decide." });
+      setActingOn(null);
+      return;
+    }
+    // Brand approval must go through the review queue (GST portal confirmation).
+    if (decision === "verified" && target.role === "brand" && target.status !== "suspended") {
+      setNotice({ tone: "danger", text: "Approve brands from the Verification Queue, where the GSTIN must be confirmed on the GST portal." });
+      setActingOn(null);
+      return;
+    }
     setBusy(true);
     setNotice(null);
-
-    // Build target verification doc if not present
-    const targetDoc: VerificationDoc = actingOn.verification || {
-      uid: actingOn.user.uid,
-      role: actingOn.user.role,
-      status: "unverified",
-      application:
-        actingOn.user.role === "brand"
-          ? {
-              contactName: actingOn.user.displayName || "Brand Representative",
-              legalName: actingOn.user.displayName || "Registered Entity",
-              tradeName: actingOn.user.displayName || "Trading Brand",
-              businessType: "private_limited",
-              country: "IN",
-              website: "",
-              representative: {
-                name: actingOn.user.displayName || "Director",
-                designation: "Authorized Signatory",
-                email: actingOn.user.email,
-              },
-              hasGstin: true,
-              gstin: "27AAPFU0939F1ZV",
-              altEvidenceType: "",
-              registrationNumber: "",
-            }
-          : {
-              displayName: actingOn.user.displayName || "Creator",
-              headline: "AI Creator",
-              bio: "Creative profile awaiting platform review and validation.",
-              portfolioLinks: ["https://krealink.com/sample"],
-              sampleWorkLinks: [],
-              specializations: ["Generative Video"],
-              formats: ["9:16"],
-              aiTools: ["Runway", "Midjourney"],
-              availability: "open",
-              offersCommercialLicense: true,
-              commercialNotes: "",
-              isRegisteredBusiness: false,
-              gstin: "",
-            },
-      evidence: [],
-      consent: { accepted: true, version: "v1", acceptedAt: Date.now() },
-      updatedAt: Date.now(),
-    };
-
     try {
+      const u = actingOn.user;
+      const profileId = u.role === "creator" ? u.creatorUsername : u.brandId;
       await decideVerification({
         adminUid: user.uid,
-        target: targetDoc,
+        target,
         to: decision,
-        reason: reason.trim() || `Administrative supervision action: marked as ${decision}`,
-        publicProfile:
-          actingOn.user.role === "creator"
-            ? { collection: "creators", id: actingOn.user.creatorUsername || actingOn.user.uid }
-            : actingOn.user.brandId
-              ? { collection: "brands", id: actingOn.user.brandId }
-              : null,
+        reason: reason.trim(),
+        publicProfile: profileId ? { collection: u.role === "creator" ? "creators" : "brands", id: profileId } : null,
       });
-      setNotice({ tone: "success", text: `Successfully updated ${actingOn.user.displayName || actingOn.user.email} to ${STATUS_LABEL[decision]}.` });
+      setNotice({ tone: "success", text: `Updated ${u.displayName || u.email} to ${STATUS_LABEL[decision]}. Recorded in the audit trail.` });
       setActingOn(null);
       setReason("");
     } catch (err) {
@@ -213,19 +187,32 @@ export default function AdminUsersSurveillancePage() {
                           View Application
                         </Link>
 
-                        {!isApproved && (
-                          <Button
-                            size="sm"
-                            variant="forest"
-                            onClick={() => {
-                              setActingOn({ user: u, verification: vDoc });
-                              setDecision("verified");
-                              setReason("Identity verified and accepted by platform administration.");
-                            }}
+                        {!vDoc ? (
+                          <span className="px-2 text-xs text-muted">No application yet</span>
+                        ) : (
+                        <>
+                        {!isApproved && !isSuspended && (u.role === "brand" ? (
+                          <Link
+                            href={`/admin/verifications?status=${vDoc.status}`}
+                            className="rounded-lg bg-forest-700 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-forest-800"
                           >
-                            Accept & Approve
-                          </Button>
-                        )}
+                            Review &amp; approve (GSTIN)
+                          </Link>
+                        ) : (
+                          canAdminTransition(vDoc.status, "verified") && (
+                            <Button
+                              size="sm"
+                              variant="forest"
+                              onClick={() => {
+                                setActingOn({ user: u, verification: vDoc });
+                                setDecision("verified");
+                                setReason("");
+                              }}
+                            >
+                              Approve
+                            </Button>
+                          )
+                        ))}
 
                         {!isSuspended ? (
                           <Button
@@ -251,6 +238,8 @@ export default function AdminUsersSurveillancePage() {
                           >
                             Reinstate
                           </Button>
+                        )}
+                        </>
                         )}
                       </div>
                     </td>
@@ -285,10 +274,10 @@ export default function AdminUsersSurveillancePage() {
             title={`Administrative Action: ${STATUS_LABEL[decision]}`}
           >
             <div className="space-y-4">
-              <p className="text-sm text-white/80">
-                You are about to transition <strong className="text-white">{actingOn.user.displayName || actingOn.user.email}</strong> from{" "}
-                <strong className="text-lime-300">{STATUS_LABEL[actingOn.verification ? actingOn.verification.status : "unverified"]}</strong> to{" "}
-                <strong className={decision === "verified" ? "text-emerald-400" : "text-rose-400"}>{STATUS_LABEL[decision]}</strong>.
+              <p className="text-sm text-body">
+                You are about to transition <strong className="text-strong">{actingOn.user.displayName || actingOn.user.email}</strong> from{" "}
+                <strong className="text-forest-700">{STATUS_LABEL[actingOn.verification ? actingOn.verification.status : "unverified"]}</strong> to{" "}
+                <strong className={decision === "verified" ? "text-forest-700" : "text-rose-600"}>{STATUS_LABEL[decision]}</strong>.
               </p>
 
               <div>
@@ -298,11 +287,12 @@ export default function AdminUsersSurveillancePage() {
                   onChange={(e) => setDecision(e.target.value as VerificationStatus)}
                   className="mt-1 w-full rounded-xl border border-white/20 bg-black/60 px-3 py-2 text-sm text-white outline-none focus:border-lime-400"
                 >
-                  <option value="verified">Approve & Grant Full Platform Access (Verified)</option>
-                  <option value="pending_review">Put Back in Review Queue (Pending Review)</option>
-                  <option value="info_required">Request Additional Verification Details</option>
-                  <option value="rejected">Reject Application</option>
-                  <option value="suspended">Suspend Account (Block All Commercial Actions)</option>
+                  {/* Only moves the verification state machine allows from the current status. */}
+                  {(actingOn.verification ? ADMIN_TRANSITIONS[actingOn.verification.status] : [])
+                    .filter((to) => !(to === "verified" && actingOn.user.role === "brand" && actingOn.verification?.status !== "suspended"))
+                    .map((to) => (
+                      <option key={to} value={to}>{ACTION_TEXT[to]}</option>
+                    ))}
                 </select>
               </div>
 

@@ -98,7 +98,9 @@ service cloud.firestore {
       allow get: if signedIn() && (me() == userId || isAdmin());
       allow list: if isAdmin();
 
+      // Staff (admin) accounts can never also hold a brand or creator role.
       allow create: if signedIn() && me() == userId
+        && !exists(docPath('admins', userId))
         && request.resource.data.keys().hasOnly(['uid', 'role', 'email', 'displayName', 'brandId', 'createdAt', 'updatedAt'])
         && request.resource.data.uid == userId
         && request.resource.data.role in ['brand', 'creator']

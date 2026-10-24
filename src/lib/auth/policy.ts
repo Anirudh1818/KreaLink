@@ -158,16 +158,12 @@ export type PortalArea = "brand" | "creator" | "admin" | "public";
 
 /** Which portal a pathname belongs to. Unlisted paths are public. */
 export function portalForPath(pathname: string): PortalArea {
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) return "admin";
-  if (pathname === "/brand" || pathname.startsWith("/brand/")) return "brand";
-  if (
-    pathname === "/creator" ||
-    pathname.startsWith("/creator/") ||
-    pathname === "/creator-studio" ||
-    pathname.startsWith("/creator-studio/")
-  ) {
-    return "creator";
-  }
+  const under = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
+  if (under("/admin")) return "admin";
+  // The campaign pipeline is a brand tool.
+  if (under("/brand") || under("/pipeline")) return "brand";
+  // Profile builder and studio are creator tools.
+  if (under("/creator") || under("/creator-studio") || under("/join-creator")) return "creator";
   return "public";
 }
 
@@ -202,7 +198,9 @@ export function decideRoute(pathname: string, p: Principal, status: Verification
     // Signed-in non-admins only see how admin access is granted.
     return pathname === ADMIN_ACCESS_PATH ? { allow: true } : { allow: false, redirectTo: ADMIN_ACCESS_PATH };
   }
-  if (p.kind === "admin") return { allow: true }; // oversight access
+  // Admins are staff, not members: they oversee everything from /admin and
+  // never operate inside the brand or creator workspaces.
+  if (p.kind === "admin") return { allow: false, redirectTo: "/admin" };
   if (p.kind === "anonymous") {
     // Verification pages need an account; the dashboards stay open as demo.
     if (pathname.endsWith("/verification")) return { allow: false, redirectTo: `/login?next=${pathname}` };

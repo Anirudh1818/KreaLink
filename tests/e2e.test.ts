@@ -7,7 +7,7 @@
 import { PROJECT } from "./e2e-env"; // must stay first: sets env before firebase init
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fauth from "firebase/auth";
 import * as fstore from "firebase/firestore";
 import * as fstorage from "firebase/storage";
@@ -44,10 +44,21 @@ async function signIn(email: string, password: string) {
   await m.fb.auth.currentUser!.getIdToken(true);
 }
 
-function provision(...args: string[]) {
-  return spawnSync(process.execPath, ["--import", "tsx", "scripts/provision-admin.ts", ...args], {
-    env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT, FIRESTORE_EMULATOR_HOST: FS_HOST, FIREBASE_AUTH_EMULATOR_HOST: AUTH_HOST },
-    encoding: "utf8",
+/**
+ * Run the provisioning script without blocking the event loop. (spawnSync froze
+ * this process long enough for the emulator to drop idle keep-alive sockets,
+ * so the next Auth request failed with network-request-failed.)
+ */
+function provision(...args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "scripts/provision-admin.ts", ...args], {
+      env: { ...process.env, FIREBASE_PROJECT_ID: PROJECT, FIRESTORE_EMULATOR_HOST: FS_HOST, FIREBASE_AUTH_EMULATOR_HOST: AUTH_HOST },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
 
@@ -163,14 +174,14 @@ describe("end-to-end", { concurrency: false }, () => {
     await m.fauth.sendEmailVerification(m.fb.auth.currentUser!);
 
     // Unverified email → refused.
-    const early = provision("grant", ADMIN.email, "--by", "E2E test");
+    const early = await provision("grant", ADMIN.email, "--by", "E2E test");
     assert.notEqual(early.status, 0);
     assert.match(early.stderr, /not verified/);
 
     await verifyEmailViaEmulator(ADMIN.email);
     await assert.rejects(m.fstore.getDocs(m.fstore.collection(m.fb.db, "verifications")), "not admin before provisioning");
 
-    const r = provision("grant", ADMIN.email, "--by", "E2E test");
+    const r = await provision("grant", ADMIN.email, "--by", "E2E test");
     assert.equal(r.status, 0, r.stderr);
     await signIn(ADMIN.email, ADMIN.password);
     const queue = await m.fstore.getDocs(m.fstore.collection(m.fb.db, "verifications"));
@@ -210,7 +221,7 @@ describe("end-to-end", { concurrency: false }, () => {
   });
 
   it("last admin cannot be revoked", async () => {
-    const r = provision("revoke", ADMIN.email, "--by", "E2E test");
+    const r = await provision("revoke", ADMIN.email, "--by", "E2E test");
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /last active admin/);
   });

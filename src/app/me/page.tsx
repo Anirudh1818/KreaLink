@@ -91,8 +91,10 @@ export default function AccountHubPage() {
         </div>
 
         {/* Workspace Hub Cards */}
-        <div className="mt-8 grid gap-6 sm:grid-cols-2">
+        {account.role && !account.isAdmin && (
+        <div className="mt-8 grid gap-6">
           {/* Creator Studio Card */}
+          {account.role === "creator" && (
           <Link
             href="/creator-studio"
             className="group rounded-[2.2rem] border border-white/10 bg-black/40 p-6 transition duration-300 hover:border-white/30 hover:shadow-2xl"
@@ -108,8 +110,10 @@ export default function AccountHubPage() {
               Open Creator Studio →
             </span>
           </Link>
+          )}
 
           {/* Brand Workspace Card */}
+          {account.role === "brand" && (
           <Link
             href="/brand"
             className="group rounded-[2.2rem] border border-white/10 bg-black/40 p-6 transition duration-300 hover:border-white/30 hover:shadow-2xl"
@@ -125,7 +129,9 @@ export default function AccountHubPage() {
               Open Brand Hub →
             </span>
           </Link>
+          )}
         </div>
+        )}
 
         {/* Marketplace Explorer */}
         <div className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.02] p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
