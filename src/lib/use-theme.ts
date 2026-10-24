@@ -15,7 +15,7 @@ export function useStoredTheme() {
   useEffect(() => {
     const savedTheme =
       localStorage.getItem("krealink-theme") ||
-      localStorage.getItem("fanstreak-theme");
+      null;
 
     if (isThemeKey(savedTheme)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration-safe localStorage read

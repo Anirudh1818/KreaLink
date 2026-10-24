@@ -112,7 +112,7 @@ export default function CreatorStudioPage() {
           if (urlParams.get("tab") === "engagements") setActiveTab("engagements");
           const localStored =
             localStorage.getItem("krealink-current-creator") ||
-            localStorage.getItem("fanstreak-current-creator");
+            null;
           if (creatorQuery) targetUser = creatorQuery;
           else if (localStored) targetUser = localStored;
         }

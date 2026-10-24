@@ -43,13 +43,13 @@ export async function POST(request: Request) {
     const order = await razorpay.orders.create({
       amount: Math.round(amount * 100),
       currency: "INR",
-      receipt: `fanstreak_${Date.now()}`,
+      receipt: `krealink_${Date.now()}`,
       notes: {
         creatorId,
         creatorName,
         fanUid,
         fanName,
-        platform: "FanStreak",
+        platform: "KreaLink",
       },
     });
 

@@ -12,7 +12,7 @@ export type KreaLinkTheme = {
   accent: string;
 };
 
-export type FanStreakTheme = KreaLinkTheme;
+
 
 export const themes: Record<ThemeKey, KreaLinkTheme> = {
   flame: {
