@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useState } from "react";
+import { AppShell } from "@/components/AppShell";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -504,7 +505,7 @@ export default function JoinCreatorPage() {
   const creatorInitial = creatorName.trim().charAt(0).toUpperCase() || "K";
 
   return (
-    <main className="min-h-screen bg-[#07080c] text-white flex flex-col">
+    <AppShell>
       {/* Top Studio Header */}
       <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#090b11]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 md:px-8">
@@ -1076,6 +1077,6 @@ export default function JoinCreatorPage() {
           </div>
         </div>
       </div>
-    </main>
+    </AppShell>
   );
 }

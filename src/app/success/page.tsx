@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStoredTheme } from "@/lib/use-theme";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 
 const steps = [
   {
@@ -35,8 +35,7 @@ function SuccessContent() {
   const isInvite = type === "invite";
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050508] text-white">
-      <Navbar />
+    <AppShell>
 
       <div className="pointer-events-none fixed inset-0">
         <div
@@ -170,7 +169,7 @@ function SuccessContent() {
           </div>
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }
 

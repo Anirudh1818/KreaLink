@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useStoredTheme } from "@/lib/use-theme";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 import { NetworkCanvas } from "@/components/NetworkCanvas";
 
 export default function ChooseRolePage() {
   const { theme } = useStoredTheme();
 
   return (
-    <main className="relative min-h-screen bg-[#07070a] text-white overflow-hidden">
+    <AppShell>
       {/* 3D Network Canvas Background */}
       <NetworkCanvas />
 
@@ -21,8 +21,6 @@ export default function ChooseRolePage() {
                        radial-gradient(circle 450px at 80% 80%, #0ea5e912, transparent 65%)`,
         }}
       />
-
-      <Navbar />
 
       <section className="relative z-10 mx-auto max-w-5xl px-5 py-16 text-center md:py-24">
         {/* Status Pill */}
@@ -153,6 +151,6 @@ export default function ChooseRolePage() {
           </Link>
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useStoredTheme } from "@/lib/use-theme";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 
 export default function AccountHubPage() {
   const { user, loading, signOutUser } = useAuth();
@@ -11,7 +11,7 @@ export default function AccountHubPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050508] px-5 text-white">
+      <main className="flex min-h-screen items-center justify-center bg-ink px-5 text-white">
         <p className="text-sm font-bold text-white/50">Loading your account...</p>
       </main>
     );
@@ -19,8 +19,7 @@ export default function AccountHubPage() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-[#050508] text-white">
-        <Navbar />
+      <AppShell>
         <div className="flex min-h-[70vh] items-center justify-center px-5">
           <div
             className="w-full max-w-md rounded-[2.2rem] border border-white/10 bg-[#0b0810] p-8 text-center"
@@ -40,13 +39,12 @@ export default function AccountHubPage() {
             </Link>
           </div>
         </div>
-      </main>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#050508] text-white">
-      <Navbar />
+    <AppShell>
 
       <section className="mx-auto max-w-4xl px-5 py-12 md:px-8">
         <div className="flex flex-col gap-4 border-b border-white/10 pb-8 sm:flex-row sm:items-center sm:justify-between">
@@ -120,6 +118,6 @@ export default function AccountHubPage() {
           </Link>
         </div>
       </section>
-    </main>
+    </AppShell>
   );
 }

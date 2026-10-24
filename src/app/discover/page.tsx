@@ -6,7 +6,7 @@ import Image from "next/image";
 import { collection, getDocs, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 import { CreatorProfile, CreativeBrief, INVITATION_STATUS } from "@/lib/types";
 import { evaluateCreatorMatch2 } from "@/lib/ai/matchingEngine2";
 import { DEMO_CREATORS, DEMO_BRIEFS } from "@/lib/demoData";
@@ -408,8 +408,7 @@ export default function DiscoverPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#07080c] text-white">
-      <Navbar />
+    <AppShell>
 
       {/* ======================================================== */}
       {/* HEADER & FILTER BAR */}
@@ -1120,6 +1119,6 @@ export default function DiscoverPage() {
           </div>
         </div>
       )}
-    </main>
+    </AppShell>
   );
 }
