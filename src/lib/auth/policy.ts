@@ -172,7 +172,7 @@ export function portalForPath(pathname: string): PortalArea {
 }
 
 /** Paths inside a portal that must stay reachable without that role (signup flows). */
-const OPEN_PORTAL_PATHS = ["/brand/signup", "/creator/signup"];
+const OPEN_PORTAL_PATHS = ["/brand/signup", "/creator/signup", "/admin/login"];
 
 /** Explains how owners get admin access; any signed-in account may view it. */
 export const ADMIN_ACCESS_PATH = "/admin/access";

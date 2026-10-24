@@ -199,12 +199,18 @@ function LoginInner() {
                   Continue with Google
                 </Button>
 
-                <div className="mt-5 space-y-1 text-center text-[12px] text-muted">
+                <div className="mt-5 space-y-2 text-center text-[12px] text-muted">
                   <p>New to KreaLink?</p>
                   <p>
                     <Link href="/brand/signup" className="font-semibold text-forest-600 hover:underline">Sign up as a Brand</Link>
                     {" · "}
                     <Link href="/creator/signup" className="font-semibold text-forest-600 hover:underline">Sign up as a Creator</Link>
+                  </p>
+                  <p className="pt-2 text-[11px] text-white/40">
+                    Staff member?{" "}
+                    <Link href="/admin/login" className="font-semibold text-red-400 hover:underline">
+                      Admin Portal Login
+                    </Link>
                   </p>
                 </div>
               </>
