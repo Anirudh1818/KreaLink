@@ -22,8 +22,9 @@ import {
   ENGAGEMENT_STATUS,
 } from "@/lib/types";
 import { DEMO_CREATORS } from "@/lib/demoData";
+import { ActiveEngagements, useActiveEngagementCount } from "./ActiveEngagements";
 
-type StudioTab = "overview" | "current-projects" | "portfolio" | "skills" | "earnings";
+type StudioTab = "overview" | "current-projects" | "engagements" | "portfolio" | "skills" | "earnings";
 
 export default function CreatorStudioPage() {
   const { user } = useAuth();
@@ -37,6 +38,7 @@ export default function CreatorStudioPage() {
   );
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [engagements, setEngagements] = useState<Engagement[]>([]);
+  const activeEngagementCount = useActiveEngagementCount(creatorProfile.username);
 
   // Deliverable Submission State
   const [deliverableAssetUrl, setDeliverableAssetUrl] = useState("/reels/reel-01.mp4");
@@ -56,6 +58,7 @@ export default function CreatorStudioPage() {
       if (typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         const creatorQuery = urlParams.get("creator");
+        if (urlParams.get("tab") === "engagements") setActiveTab("engagements");
         const localStored =
           localStorage.getItem("krealink-current-creator") ||
           localStorage.getItem("fanstreak-current-creator");
@@ -250,6 +253,17 @@ export default function CreatorStudioPage() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("engagements")}
+            className={`px-4 py-2 rounded-t-xl transition ${
+              activeTab === "engagements"
+                ? "text-emerald-400 border-b-2 border-emerald-500 font-bold"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Active Engagements ({activeEngagementCount})
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("portfolio")}
             className={`px-4 py-2 rounded-t-xl transition ${
               activeTab === "portfolio"
@@ -283,6 +297,10 @@ export default function CreatorStudioPage() {
           </button>
         </div>
 
+        {activeTab === "engagements" ? (
+          <ActiveEngagements creatorUsername={creatorProfile.username} />
+        ) : (
+        <>
         {/* Active Project Header Card */}
         <div className="rounded-2xl bg-[#0c1017] border border-white/[0.08] p-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -602,6 +620,8 @@ export default function CreatorStudioPage() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </AppShell>
   );
