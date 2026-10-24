@@ -85,17 +85,23 @@ html, body {
   background: var(--color-ink);
 }
 
-body {
-  color: var(--color-body);
-  font-family: var(--font-sans);
-  letter-spacing: -0.006em;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
+/* Base styles live in @layer base so Tailwind utilities and component classes
+   (e.g. text-white, .kl-header h1) can override them. Unlayered rules here
+   would beat every utility and make headings on dark banners unreadable. */
+@layer base {
+  body {
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    letter-spacing: -0.006em;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
 
-h1, h2, h3, h4 {
-  color: var(--color-strong);
-  letter-spacing: -0.022em;
+  /* Headings take their container's colour: white on dark banners, dark on cards. */
+  h1, h2, h3, h4 {
+    color: inherit;
+    letter-spacing: -0.022em;
+  }
 }
 
 ::selection {
@@ -116,12 +122,14 @@ h1, h2, h3, h4 {
 @layer components {
   /* Main light panel with forest glow behind the header */
   .kl-panel {
+    color: var(--color-body);
     background:
       radial-gradient(120% 340px at 50% -60px, rgba(74, 150, 122, 0.55) 0%, rgba(23, 58, 51, 0) 70%),
       linear-gradient(180deg, #102b26 0px, #163a33 140px, #5f7d73 250px, #dfe6e3 320px, var(--color-panel) 400px);
     box-shadow: inset 0 0 0 1px rgba(78, 140, 118, 0.35);
   }
   .kl-panel-plain {
+    color: var(--color-body);
     background: var(--color-panel);
   }
 
@@ -169,11 +177,13 @@ h1, h2, h3, h4 {
 
   /* Light cards */
   .kl-card {
+    color: var(--color-body);
     background: var(--color-card);
     border-radius: 22px;
     box-shadow: inset 0 0 0 1px var(--color-line), 0 1px 2px rgba(17, 22, 21, 0.03);
   }
   .kl-card-soft {
+    color: var(--color-body);
     background: #f7f8f7;
     border-radius: 20px;
     box-shadow: inset 0 0 0 1px var(--color-line);

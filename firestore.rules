@@ -1,29 +1,89 @@
 rules_version = '2';
 
-// KreaLink Marketplace — Hardened Firestore Security Rules
+// KreaLink — Firestore Security Rules
 // --------------------------------------------------------------------------
-// Enforces:
-// 1. Ownership & Authenticated Access for Creators, Brands, Briefs
-// 2. Parent-creator profile validation for Portfolios
-// 3. Multi-participant authorization for Invitations & Engagements
-// 4. Strict status lifecycle state-transitions (Invited -> Accepted/Declined, Accepted -> In Progress -> Delivered)
-// 5. Public read-access where marketplace discovery explicitly requires it
-// 6. Default Deny on all unmapped collections
+// Authentication  : Firebase Auth (request.auth, email_verified claim)
+// Verification    : verifications/{uid}.status — decided only by admins
+// Authorization   : users/{uid}.role (brand|creator, immutable),
+//                   admins/{uid} (no client writes; provisioned by script)
+//
+// The verification state machine mirrors src/lib/auth/policy.ts.
+// Every admin decision must commit in the same batch as an audit log entry.
+// Test with: npm run test:rules   (Firestore + Storage emulators)
 // --------------------------------------------------------------------------
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ------------------------------------------------------------------------
-    // Global Auth Helpers
+    // Identity helpers
     // ------------------------------------------------------------------------
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
+    function me() {
+      return request.auth.uid;
+    }
+
+    function emailVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function docPath(coll, id) {
+      return /databases/$(database)/documents/$(coll)/$(id);
+    }
+
+    // Admin = active grant in admins/{uid}; MFA required when the grant says so.
     function isAdmin() {
-      return isSignedIn()
-        && request.auth.token.email in ['saxenaanirudh59@gmail.com'];
+      return signedIn()
+        && exists(docPath('admins', me()))
+        && get(docPath('admins', me())).data.active == true
+        && (
+          get(docPath('admins', me())).data.get('requireMfa', false) != true
+          || request.auth.token.firebase.get('sign_in_second_factor', null) != null
+        );
+    }
+
+    function hasRole(r) {
+      return signedIn()
+        && exists(docPath('users', me()))
+        && get(docPath('users', me())).data.role == r;
+    }
+
+    // Verified member of role r whose account is not suspended.
+    function isVerified(r) {
+      return hasRole(r)
+        && emailVerified()
+        && exists(docPath('verifications', me()))
+        && get(docPath('verifications', me())).data.status == 'verified'
+        && get(docPath('verifications', me())).data.role == r;
+    }
+
+    function str(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function optStr(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function tags(v) {
+      return v is list && v.size() >= 1 && v.size() <= 20;
+    }
+
+    function links(v, min) {
+      return v is list && v.size() >= min && v.size() <= 8;
+    }
+
+    // Owner may never write trusted verification fields on public profiles.
+    function noTrustedFields(data) {
+      return !data.keys().hasAny(['verified', 'verification', 'verificationStatus']);
+    }
+
+    function trustedFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['verified', 'verification', 'verificationStatus', 'ownerUid']);
     }
 
     function photoWithinLimit(data) {
@@ -31,271 +91,369 @@ service cloud.firestore {
         || (data.profilePhoto is string && data.profilePhoto.size() < 900000);
     }
 
-    function creatorDocExists(username) {
-      return exists(/databases/$(database)/documents/creators/$(username));
-    }
+    // ------------------------------------------------------------------------
+    // users/{uid} — role is chosen once (brand|creator) and is immutable
+    // ------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if signedIn() && (me() == userId || isAdmin());
+      allow list: if isAdmin();
 
-    function brandDocExists(brandId) {
-      return exists(/databases/$(database)/documents/brands/$(brandId));
-    }
+      allow create: if signedIn() && me() == userId
+        && request.resource.data.keys().hasOnly(['uid', 'role', 'email', 'displayName', 'brandId', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == userId
+        && request.resource.data.role in ['brand', 'creator']
+        && request.resource.data.email == request.auth.token.email
+        && str(request.resource.data.displayName, 1, 120)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && (
+          !('brandId' in request.resource.data.keys())
+          || (request.resource.data.role == 'brand' && str(request.resource.data.brandId, 3, 64))
+        );
 
-    function getCreatorOwnerUid(username) {
-      return get(/databases/$(database)/documents/creators/$(username)).data.ownerUid;
-    }
+      // Owner may edit display name and link their creator profile once.
+      allow update: if signedIn() && me() == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'creatorUsername', 'updatedAt'])
+        && str(request.resource.data.displayName, 1, 120)
+        && request.resource.data.updatedAt == request.time
+        && (
+          !('creatorUsername' in request.resource.data.diff(resource.data).affectedKeys())
+          || (
+            resource.data.role == 'creator'
+            && !('creatorUsername' in resource.data.keys())
+            && str(request.resource.data.creatorUsername, 3, 40)
+            && getAfter(docPath('creators', request.resource.data.creatorUsername)).data.ownerUid == me()
+          )
+        );
 
-    function getBrandOwnerUid(brandId) {
-      return get(/databases/$(database)/documents/brands/$(brandId)).data.ownerUid;
+      allow delete: if false;
     }
 
     // ------------------------------------------------------------------------
-    // 1. Creators & Portfolios (/creators/{username})
+    // admins/{uid} — provisioned only by scripts/provision-admin.ts (Admin SDK)
+    // ------------------------------------------------------------------------
+    match /admins/{adminId} {
+      allow get: if signedIn() && me() == adminId;
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // verifications/{uid} — application + status (state machine)
+    // ------------------------------------------------------------------------
+    match /verifications/{userId} {
+      function next() {
+        return request.resource.data;
+      }
+
+      function validConsent(c) {
+        return c is map
+          && c.keys().hasOnly(['accepted', 'version', 'acceptedAt'])
+          && c.accepted == true
+          && str(c.version, 1, 60)
+          && c.acceptedAt is int;
+      }
+
+      function validBrandApp(a) {
+        return a is map
+          && a.keys().hasOnly(['contactName', 'legalName', 'tradeName', 'businessType', 'country', 'website',
+                               'representative', 'hasGstin', 'gstin', 'altEvidenceType', 'registrationNumber'])
+          && str(a.contactName, 2, 120)
+          && str(a.legalName, 2, 120)
+          && str(a.tradeName, 2, 120)
+          && a.businessType in ['private_limited', 'public_limited', 'llp', 'partnership', 'sole_proprietorship', 'agency', 'other']
+          && a.country == 'IN'
+          && optStr(a.website, 300)
+          && a.representative is map
+          && a.representative.keys().hasOnly(['name', 'designation', 'email'])
+          && str(a.representative.name, 2, 120)
+          && str(a.representative.designation, 2, 120)
+          && str(a.representative.email, 3, 254)
+          // GSTIN is mandatory for brands.
+          && a.hasGstin == true
+          && a.gstin is string && a.gstin.matches('^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$');
+      }
+
+      function validCreatorApp(a) {
+        return a is map
+          && a.keys().hasOnly(['displayName', 'headline', 'bio', 'portfolioLinks', 'sampleWorkLinks', 'specializations',
+                               'formats', 'aiTools', 'availability', 'offersCommercialLicense', 'commercialNotes',
+                               'isRegisteredBusiness', 'gstin'])
+          && str(a.displayName, 2, 120)
+          && str(a.headline, 2, 120)
+          && str(a.bio, 20, 2000)
+          && links(a.portfolioLinks, 1)
+          && links(a.sampleWorkLinks, 0)
+          && tags(a.specializations)
+          && tags(a.formats)
+          && tags(a.aiTools)
+          && a.availability in ['open', 'limited', 'booked']
+          && a.offersCommercialLicense is bool
+          && optStr(a.commercialNotes, 2000)
+          && a.isRegisteredBusiness is bool
+          && optStr(a.gstin, 15);
+      }
+
+      function validApplication(r, a) {
+        return (r == 'brand' && validBrandApp(a)) || (r == 'creator' && validCreatorApp(a));
+      }
+
+      function validEvidence(e) {
+        return e is list && e.size() <= 6;
+      }
+
+      // Submitting (→ pending_review) requires a verified email and stamps submittedAt.
+      function submissionStamped() {
+        return next().status != 'pending_review'
+          || (emailVerified() && next().submittedAt == request.time);
+      }
+
+      function adminTransitionOk(from, to) {
+        return (from == 'unverified' && to in ['suspended'])
+          || (from == 'pending_review' && to in ['verified', 'rejected', 'info_required', 'suspended'])
+          || (from == 'info_required' && to in ['rejected', 'suspended'])
+          || (from == 'verified' && to in ['suspended', 'info_required'])
+          || (from == 'suspended' && to in ['verified', 'rejected'])
+          || (from == 'rejected' && to in ['info_required']);
+      }
+
+      // The audit entry named by lastAuditId must be created in this same batch.
+      function auditedAs(action, fromStatus, toStatus) {
+        return next().lastAuditId is string
+          && !exists(docPath('auditLogs', next().lastAuditId))
+          && existsAfter(docPath('auditLogs', next().lastAuditId))
+          && getAfter(docPath('auditLogs', next().lastAuditId)).data.action == action
+          && getAfter(docPath('auditLogs', next().lastAuditId)).data.actorUid == me()
+          && getAfter(docPath('auditLogs', next().lastAuditId)).data.targetUid == userId
+          && getAfter(docPath('auditLogs', next().lastAuditId)).data.get('fromStatus', null) == fromStatus
+          && getAfter(docPath('auditLogs', next().lastAuditId)).data.get('toStatus', null) == toStatus;
+      }
+
+      allow get: if signedIn() && (me() == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn() && me() == userId
+        && next().keys().hasOnly(['uid', 'role', 'status', 'application', 'evidence', 'consent', 'submittedAt', 'updatedAt'])
+        && next().uid == userId
+        && hasRole(next().role)
+        && next().status in ['unverified', 'pending_review']
+        && validApplication(next().role, next().application)
+        && validEvidence(next().evidence)
+        && validConsent(next().consent)
+        && next().updatedAt == request.time
+        && submissionStamped();
+
+      // Applicant: edit a draft / info-requested application, optionally (re)submit.
+      allow update: if signedIn() && me() == userId
+        && resource.data.status in ['unverified', 'info_required']
+        && next().status in [resource.data.status, 'pending_review']
+        && next().diff(resource.data).affectedKeys().hasOnly(['status', 'application', 'evidence', 'consent', 'submittedAt', 'updatedAt'])
+        && validApplication(resource.data.role, next().application)
+        && validEvidence(next().evidence)
+        && validConsent(next().consent)
+        && next().updatedAt == request.time
+        && submissionStamped();
+
+      // Admin: status decision (never on their own record), always audited.
+      allow update: if isAdmin() && me() != userId
+        && next().diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'decisionReason', 'lastAuditId', 'updatedAt'])
+        && adminTransitionOk(resource.data.status, next().status)
+        && next().reviewedBy == me()
+        && next().reviewedAt == request.time
+        && next().updatedAt == request.time
+        && str(next().decisionReason, 3, 1000)
+        && auditedAs('verification.decision', resource.data.status, next().status);
+
+      // Admin: purge evidence references after a final decision (retention), audited.
+      allow update: if isAdmin() && me() != userId
+        && resource.data.status in ['verified', 'rejected']
+        && next().diff(resource.data).affectedKeys().hasOnly(['evidence', 'lastAuditId', 'updatedAt'])
+        && next().evidence.size() == 0
+        && next().updatedAt == request.time
+        && auditedAs('evidence.purge', null, null);
+
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // auditLogs/{id} — append-only, admin-only
+    // ------------------------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['action', 'actorUid', 'targetUid', 'fromStatus', 'toStatus', 'reason', 'at'])
+        && request.resource.data.action in ['verification.decision', 'evidence.view', 'evidence.purge']
+        && request.resource.data.actorUid == me()
+        && str(request.resource.data.targetUid, 1, 128)
+        && request.resource.data.targetUid != me()
+        && str(request.resource.data.reason, 3, 1000)
+        && request.resource.data.at == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // creators/{username} — public profiles
     // ------------------------------------------------------------------------
     match /creators/{username} {
-      // Public Read: Discovery, search, and public portfolio inspection
       allow read: if true;
 
-      // Create: Authenticated creator setting themselves as owner
       allow create: if photoWithinLimit(request.resource.data) && (
         isAdmin() || (
-          isSignedIn() && (
-            !('ownerUid' in request.resource.data) ||
-            request.resource.data.ownerUid == request.auth.uid
-          )
+          hasRole('creator')
+          && request.resource.data.ownerUid == me()
+          && noTrustedFields(request.resource.data)
         )
       );
 
-      // Update: Only author/owner or admin can modify their profile
       allow update: if photoWithinLimit(request.resource.data) && (
         isAdmin() || (
-          isSignedIn() && (
-            // If resource has ownerUid, must match request.auth.uid
-            ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
-            // Or if existing profile was legacy/demo without ownerUid, caller can claim only once
-            (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid)
-          )
+          signedIn()
+          && resource.data.get('ownerUid', null) == me()
+          && trustedFieldsUnchanged()
         )
       );
 
-      // Delete: Admin or creator owner only
-      allow delete: if isAdmin() || (isSignedIn() && 'ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid);
+      allow delete: if isAdmin() || (signedIn() && resource.data.get('ownerUid', null) == me());
 
-      // Subcollection: /creators/{username}/portfolio/{portfolioId}
       match /portfolio/{portfolioId} {
-        // Public Read: Portfolios are public showroom reels
         allow read: if true;
-
-        // Write: Only the creator who owns the parent creator profile (or admin)
         allow create, update, delete: if isAdmin() || (
-          isSignedIn() && (
-            !creatorDocExists(username) ||
-            !('ownerUid' in get(/databases/$(database)/documents/creators/$(username)).data) ||
-            getCreatorOwnerUid(username) == request.auth.uid
-          )
+          signedIn()
+          && exists(docPath('creators', username))
+          && get(docPath('creators', username)).data.get('ownerUid', null) == me()
         );
       }
     }
 
     // ------------------------------------------------------------------------
-    // 2. Brands & Agencies (/brands/{brandId})
+    // brands/{brandId} — public attribution; id must match the owner's users doc
     // ------------------------------------------------------------------------
     match /brands/{brandId} {
-      // Public Read: Allows creators and public discovery to display brand attribution
+      function isBrandOwner(id) {
+        return signedIn()
+          && exists(docPath('brands', id))
+          && get(docPath('brands', id)).data.get('ownerUid', null) == me();
+      }
+
       allow read: if true;
 
-      // Create: Signed in brand owner setting their ownership
       allow create: if isAdmin() || (
-        isSignedIn() && (
-          !('ownerUid' in request.resource.data) ||
-          request.resource.data.ownerUid == request.auth.uid
-        )
+        hasRole('brand')
+        && get(docPath('users', me())).data.get('brandId', null) == brandId
+        && request.resource.data.ownerUid == me()
+        && noTrustedFields(request.resource.data)
       );
 
-      // Update: Only the brand owner or admin
-      allow update: if isAdmin() || (
-        isSignedIn() && (
-          ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
-          (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid)
-        )
-      );
+      allow update: if isAdmin() || (isBrandOwner(brandId) && trustedFieldsUnchanged());
 
-      // Delete: Brand owner or admin only
-      allow delete: if isAdmin() || (isSignedIn() && 'ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid);
+      allow delete: if isAdmin() || isBrandOwner(brandId);
     }
 
     // ------------------------------------------------------------------------
-    // 3. Creative Briefs (/briefs/{briefId})
+    // briefs/{briefId} — brand-owned; drafting allowed before verification
     // ------------------------------------------------------------------------
     match /briefs/{briefId} {
-      // Public Read: Allows creators to match against briefs in discovery
+      function ownsBrand(id) {
+        return hasRole('brand')
+          && exists(docPath('brands', id))
+          && get(docPath('brands', id)).data.get('ownerUid', null) == me();
+      }
+
       allow read: if true;
-
-      // Create: Must be created by brand owner of the referenced brand
-      allow create: if isAdmin() || (
-        isSignedIn() && (
-          (
-            brandDocExists(request.resource.data.brandId) &&
-            getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
-          ) ||
-          (
-            !brandDocExists(request.resource.data.brandId) &&
-            request.resource.data.ownerUid == request.auth.uid
-          )
-        )
-      );
-
-      // Update: Only the brand owner of the referenced brand
-      allow update: if isAdmin() || (
-        isSignedIn() && (
-          (
-            brandDocExists(resource.data.brandId) &&
-            getBrandOwnerUid(resource.data.brandId) == request.auth.uid
-          ) ||
-          (
-            !brandDocExists(resource.data.brandId) &&
-            resource.data.ownerUid == request.auth.uid
-          )
-        )
-      );
-
-      // Delete: Brand owner or admin only
-      allow delete: if isAdmin() || (
-        isSignedIn() && (
-          (
-            brandDocExists(resource.data.brandId) &&
-            getBrandOwnerUid(resource.data.brandId) == request.auth.uid
-          ) ||
-          (
-            !brandDocExists(resource.data.brandId) &&
-            resource.data.ownerUid == request.auth.uid
-          )
-        )
-      );
+      allow create: if isAdmin() || ownsBrand(request.resource.data.brandId);
+      allow update: if isAdmin() || (ownsBrand(resource.data.brandId) && request.resource.data.brandId == resource.data.brandId);
+      allow delete: if isAdmin() || ownsBrand(resource.data.brandId);
     }
 
     // ------------------------------------------------------------------------
-    // 4. Invitations (/invitations/{invitationId})
+    // invitations/{id} — restricted commercial action (verified brands only)
     // ------------------------------------------------------------------------
     match /invitations/{invitationId} {
-      // Read: Public read permitted for catalog/dashboard queries
-      allow read: if true;
+      function isBrandSide() {
+        return signedIn() && resource.data.get('brandOwnerUid', null) == me();
+      }
 
-      // Create: Brand owner dispatching an invitation for their brand
+      function isCreatorSide() {
+        return signedIn() && resource.data.get('creatorOwnerUid', null) == me();
+      }
+
+      allow read: if isAdmin() || isBrandSide() || isCreatorSide();
+
       allow create: if isAdmin() || (
-        isSignedIn() && (
-          request.resource.data.status == "Invited" &&
-          (
-            (
-              brandDocExists(request.resource.data.brandId) &&
-              getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
-            ) ||
-            (
-              !brandDocExists(request.resource.data.brandId) &&
-              request.resource.data.ownerUid == request.auth.uid
-            )
-          )
-        )
+        isVerified('brand')
+        && request.resource.data.status == 'Invited'
+        && request.resource.data.ownerUid == me()
+        && request.resource.data.brandOwnerUid == me()
+        && exists(docPath('brands', request.resource.data.brandId))
+        && get(docPath('brands', request.resource.data.brandId)).data.get('ownerUid', null) == me()
+        && request.resource.data.creatorOwnerUid is string
+        && exists(docPath('creators', request.resource.data.creatorUsername))
+        && get(docPath('creators', request.resource.data.creatorUsername)).data.get('ownerUid', null) == request.resource.data.creatorOwnerUid
       );
 
-      // Update:
-      // Case 1: Recipient creator updating status ("Invited" -> "Accepted" or "Declined")
-      // Case 2: Brand owner modifying message or proposal details
-      allow update: if isAdmin() || (
-        isSignedIn() && (
-          // Creator recipient updating invitation status
-          (
-            (
-              request.resource.data.status in ["Accepted", "Declined"] &&
-              resource.data.status == "Invited"
-            ) && (
-              !creatorDocExists(resource.data.creatorUsername) ||
-              !('ownerUid' in get(/databases/$(database)/documents/creators/$(resource.data.creatorUsername)).data) ||
-              getCreatorOwnerUid(resource.data.creatorUsername) == request.auth.uid ||
-              request.resource.data.creatorOwnerUid == request.auth.uid
-            )
-          ) ||
-          // Brand owner updating invitation details
-          (
-            ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
-            ('brandOwnerUid' in resource.data && resource.data.brandOwnerUid == request.auth.uid) ||
-            (
-              brandDocExists(resource.data.brandId) &&
-              getBrandOwnerUid(resource.data.brandId) == request.auth.uid
-            ) ||
-            (!('ownerUid' in resource.data) && !brandDocExists(resource.data.brandId))
+      allow update: if isAdmin()
+        // Creator responds: accepting is a restricted action, declining is not.
+        || (
+          isCreatorSide()
+          && resource.data.status == 'Invited'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && (
+            request.resource.data.status == 'Declined'
+            || (request.resource.data.status == 'Accepted' && isVerified('creator'))
           )
         )
-      );
+        // Brand edits proposal details while still pending.
+        || (
+          isBrandSide()
+          && isVerified('brand')
+          && resource.data.status == 'Invited'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'campaignTitle', 'contentType', 'updatedAt'])
+        );
 
-      // Delete: Brand owner or admin only
-      allow delete: if isAdmin() || (
-        isSignedIn() && (
-          ('ownerUid' in resource.data && resource.data.ownerUid == request.auth.uid) ||
-          ('brandOwnerUid' in resource.data && resource.data.brandOwnerUid == request.auth.uid)
-        )
-      );
+      allow delete: if isAdmin() || isBrandSide();
     }
 
     // ------------------------------------------------------------------------
-    // 5. Engagements (/engagements/{engagementId})
+    // engagements/{id} — verified participants only; one-way lifecycle
     // ------------------------------------------------------------------------
     match /engagements/{engagementId} {
-      // Read: Open read for dashboard views
-      allow read: if true;
+      function participant(data) {
+        return (data.get('brandOwnerUid', null) == me() && isVerified('brand'))
+          || (data.get('creatorOwnerUid', null) == me() && isVerified('creator'));
+      }
 
-      // Create: Only created when invitation is accepted by creator or initiated by brand
+      allow read: if isAdmin() || (
+        signedIn() && (
+          resource.data.get('brandOwnerUid', null) == me()
+          || resource.data.get('creatorOwnerUid', null) == me()
+        )
+      );
+
       allow create: if isAdmin() || (
-        isSignedIn() && (
-          request.resource.data.status in ["Accepted", "In Progress"] && (
-            // Authorized creator or authorized brand
-            request.resource.data.creatorOwnerUid == request.auth.uid ||
-            request.resource.data.brandOwnerUid == request.auth.uid ||
-            request.resource.data.ownerUid == request.auth.uid ||
-            (
-              creatorDocExists(request.resource.data.creatorUsername) &&
-              getCreatorOwnerUid(request.resource.data.creatorUsername) == request.auth.uid
-            ) ||
-            (
-              brandDocExists(request.resource.data.brandId) &&
-              getBrandOwnerUid(request.resource.data.brandId) == request.auth.uid
-            ) ||
-            (!('creatorOwnerUid' in request.resource.data) && !('brandOwnerUid' in request.resource.data))
-          )
-        )
+        request.resource.data.status in ['Accepted', 'In Progress']
+        && request.resource.data.brandOwnerUid is string
+        && request.resource.data.creatorOwnerUid is string
+        && participant(request.resource.data)
       );
 
-      // Update: Authorized participant with valid lifecycle transitions
-      // Accepted -> In Progress -> Delivered (Never backward)
       allow update: if isAdmin() || (
-        isSignedIn() && (
-          // Lifecycle progression check
-          (
-            (resource.data.status == "Accepted" && request.resource.data.status in ["Accepted", "In Progress"]) ||
-            (resource.data.status == "In Progress" && request.resource.data.status in ["In Progress", "Delivered"]) ||
-            (resource.data.status == "Delivered" && request.resource.data.status == "Delivered")
-          ) && (
-            // Participant check: creator or brand
-            resource.data.creatorOwnerUid == request.auth.uid ||
-            resource.data.brandOwnerUid == request.auth.uid ||
-            resource.data.ownerUid == request.auth.uid ||
-            (
-              creatorDocExists(resource.data.creatorUsername) &&
-              getCreatorOwnerUid(resource.data.creatorUsername) == request.auth.uid
-            ) ||
-            (
-              brandDocExists(resource.data.brandId) &&
-              getBrandOwnerUid(resource.data.brandId) == request.auth.uid
-            ) ||
-            (!('creatorOwnerUid' in resource.data) && !('brandOwnerUid' in resource.data))
-          )
+        participant(resource.data)
+        && request.resource.data.brandOwnerUid == resource.data.brandOwnerUid
+        && request.resource.data.creatorOwnerUid == resource.data.creatorOwnerUid
+        && (
+          (resource.data.status == 'Accepted' && request.resource.data.status in ['Accepted', 'In Progress'])
+          || (resource.data.status == 'In Progress' && request.resource.data.status in ['In Progress', 'Delivered'])
+          || (resource.data.status == 'Delivered' && request.resource.data.status == 'Delivered')
         )
       );
 
-      // Delete: Administrative only
       allow delete: if isAdmin();
     }
 
     // ------------------------------------------------------------------------
-    // 6. Default Deny on all other paths
+    // Default deny
     // ------------------------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

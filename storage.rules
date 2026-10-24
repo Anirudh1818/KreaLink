@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// KreaLink — Cloud Storage Security Rules
+// Verification evidence is private: the uploader and active admins only.
+// Files are referenced by path from verifications/{uid}.evidence; no public URLs.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
+    // Owner may add/remove files only while the application is still editable.
+    function applicationEditable(userId) {
+      return !firestore.exists(/databases/(default)/documents/verifications/$(userId))
+        || firestore.get(/databases/(default)/documents/verifications/$(userId)).data.status in ['unverified', 'info_required'];
+    }
+
+    match /verification-evidence/{userId}/{fileId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && applicationEditable(userId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/(png|jpeg|webp)');
+
+      allow update: if false;
+
+      allow delete: if request.auth != null && (
+        isAdmin() || (request.auth.uid == userId && applicationEditable(userId))
+      );
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useStoredTheme } from "@/lib/use-theme";
 import { AppShell } from "@/components/AppShell";
+import { Notice } from "@/components/ui/kit";
+import { AccountStatusPanel } from "@/components/auth/AccountUI";
+import { MfaSettings } from "@/components/auth/MfaSettings";
 
 export default function AccountHubPage() {
-  const { user, loading, signOutUser } = useAuth();
+  const { user, loading, account, signOutUser } = useAuth();
   const { theme } = useStoredTheme();
 
   if (loading) {
@@ -62,6 +65,29 @@ export default function AccountHubPage() {
           >
             Sign Out
           </button>
+        </div>
+
+        {/* Role, verification and security */}
+        <div className="mt-8 space-y-4">
+          {account.isAdmin || account.adminNeedsMfa ? (
+            <Notice tone="agent" title="Admin account" action={account.isAdmin ? <Link href="/admin" className="text-[12px] font-semibold text-lime-300 underline">Open Admin Portal</Link> : undefined}>
+              Admin access is provisioned internally and can&apos;t be changed from this page.
+            </Notice>
+          ) : account.role ? (
+            <AccountStatusPanel
+              account={account}
+              action={
+                <Link href={account.role === "brand" ? "/brand/verification" : "/creator/verification"} className="text-[12px] font-semibold underline">
+                  {account.status === "verified" ? "View application" : "Open application"}
+                </Link>
+              }
+            />
+          ) : (
+            <Notice tone="warn" title="Choose how you'll use KreaLink" action={<Link href="/choose-role?setup=1" className="text-[12px] font-semibold underline">Set up</Link>}>
+              Your account doesn&apos;t have a brand or creator role yet.
+            </Notice>
+          )}
+          <MfaSettings required={account.adminNeedsMfa} />
         </div>
 
         {/* Workspace Hub Cards */}

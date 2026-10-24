@@ -93,13 +93,16 @@ console.log("\nSuite 3: Firestore Rules Ownership Logic Simulation");
 
 type AuthContext = { uid: string; email: string };
 
+// Mirrors firestore.rules: admin = active admins/{uid} grant (provisioned by script), never an email match.
+const PROVISIONED_ADMINS = new Set(["user-admin-999"]);
+
 function simulateCreatorUpdateRule(
   auth: AuthContext | null,
   resource: { ownerUid?: string },
   requestResource: { ownerUid?: string }
 ): boolean {
   if (!auth) return false;
-  if (auth.email === "saxenaanirudh59@gmail.com") return true;
+  if (PROVISIONED_ADMINS.has(auth.uid)) return true;
   if (resource.ownerUid) {
     return resource.ownerUid === auth.uid;
   }
@@ -110,20 +113,22 @@ const creatorAlice = { ownerUid: "user-alice-123" };
 const creatorBob = { ownerUid: "user-bob-456" };
 const authAlice: AuthContext = { uid: "user-alice-123", email: "alice@creator.com" };
 const authBob: AuthContext = { uid: "user-bob-456", email: "bob@creator.com" };
-const authAdmin: AuthContext = { uid: "user-admin-999", email: "saxenaanirudh59@gmail.com" };
+const authAdmin: AuthContext = { uid: "user-admin-999", email: "ops@krealink.example" };
+const authEmailSpoof: AuthContext = { uid: "user-spoof-111", email: "ops@krealink.example" };
 
 assert(simulateCreatorUpdateRule(authAlice, creatorAlice, { ownerUid: "user-alice-123" }), "ALLOW: Creator Alice updates own profile");
 assert(simulateCreatorUpdateRule(authBob, creatorBob, { ownerUid: "user-bob-456" }), "ALLOW: Creator Bob updates own profile");
 assert(!simulateCreatorUpdateRule(authBob, creatorAlice, { ownerUid: "user-bob-456" }), "DENY: Creator Bob updates Creator Alice profile");
 assert(simulateCreatorUpdateRule(authAdmin, creatorAlice, { ownerUid: "user-alice-123" }), "ALLOW: Admin updates any profile");
 assert(!simulateCreatorUpdateRule(null, creatorAlice, { ownerUid: "user-alice-123" }), "DENY: Unauthenticated user updates profile");
+assert(!simulateCreatorUpdateRule(authEmailSpoof, creatorAlice, { ownerUid: "user-spoof-111" }), "DENY: Admin email without provisioned grant updates profile");
 
 function simulatePortfolioWriteRule(
   auth: AuthContext | null,
   parentCreatorDoc: { ownerUid: string }
 ): boolean {
   if (!auth) return false;
-  if (auth.email === "saxenaanirudh59@gmail.com") return true;
+  if (PROVISIONED_ADMINS.has(auth.uid)) return true;
   return parentCreatorDoc.ownerUid === auth.uid;
 }
 
@@ -136,7 +141,7 @@ function simulateBriefWriteRule(
   requestResource: { ownerUid?: string; brandId: string }
 ): boolean {
   if (!auth) return false;
-  if (auth.email === "saxenaanirudh59@gmail.com") return true;
+  if (PROVISIONED_ADMINS.has(auth.uid)) return true;
   if (brandDoc) {
     return brandDoc.ownerUid === auth.uid;
   }

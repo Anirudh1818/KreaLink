@@ -23,6 +23,16 @@ import {
   type Version,
 } from "@/lib/r2";
 import { useR2Revision } from "@/lib/r2/useR2";
+import { useAuth } from "@/lib/auth-context";
+import { canPerform, type AccessDecision, type RestrictedAction } from "@/lib/auth/policy";
+import { RestrictedNotice } from "@/components/auth/AccountUI";
+
+/** Signed-in creators must be verified; anonymous visitors use the local demo. */
+function useCreatorAccess(action: RestrictedAction): AccessDecision {
+  const { user, account } = useAuth();
+  if (!user) return { allowed: true };
+  return canPerform(action, { signedIn: true, emailVerified: account.emailVerified, role: account.role, status: account.status });
+}
 
 const DEFAULT_SPECS: DeliverySpecs = { aspectRatio: "9:16", minShortSide: 720 };
 
@@ -276,6 +286,8 @@ function SubmitVersionForm({ eng, nextVersion }: { eng: Engagement; nextVersion:
 /* ------------------------------------------------------------------ */
 
 function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[] }) {
+  const acceptAccess = useCreatorAccess("creator.acceptInvitation");
+  const submitAccess = useCreatorAccess("creator.submitDeliverable");
   const idx = stageIndex(eng.stage);
   const canSubmit = eng.stage === "production" || eng.stage === "changes_requested";
   const lastRequested = [...versions].reverse().find((v) => v.status === "requested");
@@ -317,7 +329,9 @@ function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[
           <button
             type="button"
             onClick={() => creatorRespond(eng.id, true)}
-            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            disabled={!acceptAccess.allowed}
+            title={acceptAccess.allowed ? undefined : acceptAccess.reason}
+            className="disabled:opacity-50 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
           >
             Accept
           </button>
@@ -344,7 +358,8 @@ function EngagementCard({ eng, versions }: { eng: Engagement; versions: Version[
         </div>
       )}
 
-      {canSubmit && <SubmitVersionForm eng={eng} nextVersion={versions.length + 1} />}
+      {(eng.stage === "contacted" || canSubmit) && <RestrictedNotice decision={eng.stage === "contacted" ? acceptAccess : submitAccess} href="/creator/verification" />}
+      {canSubmit && submitAccess.allowed && <SubmitVersionForm eng={eng} nextVersion={versions.length + 1} />}
 
       {versions.length > 0 && (
         <div className="space-y-2 pt-3 border-t border-slate-200">

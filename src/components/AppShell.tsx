@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useRef, type ReactNode } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, type Account } from "@/lib/auth-context";
+import { decideRoute, portalForPath } from "@/lib/auth/policy";
 import { KreaMark, Icon, type IconName } from "@/components/ui/icons";
 import { Avatar, Badge, IconButton, Button, cn } from "@/components/ui/kit";
+import { PortalLoading, VerificationBadge } from "@/components/auth/AccountUI";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -13,12 +15,20 @@ import { Avatar, Badge, IconButton, Button, cn } from "@/components/ui/kit";
 
 type NavLink = { href: string; label: string; icon: IconName };
 
-const TOP_LINKS: NavLink[] = [
-  { href: "/discover", label: "Discover", icon: "compass" },
-  { href: "/brand", label: "Brand Hub", icon: "briefcase" },
-  { href: "/creator-studio", label: "Studio", icon: "film" },
-  { href: "/pipeline", label: "Pipeline", icon: "layers" },
-];
+const DISCOVER: NavLink = { href: "/discover", label: "Discover", icon: "compass" };
+const BRAND_HUB: NavLink = { href: "/brand", label: "Brand Hub", icon: "briefcase" };
+const STUDIO: NavLink = { href: "/creator-studio", label: "Studio", icon: "film" };
+const CREATOR_PORTAL: NavLink = { href: "/creator", label: "Creator Portal", icon: "film" };
+const PIPELINE: NavLink = { href: "/pipeline", label: "Pipeline", icon: "layers" };
+const ADMIN: NavLink = { href: "/admin", label: "Admin", icon: "shield" };
+
+/** Navigation follows the trusted role; anonymous visitors see the demo set. */
+function topLinksFor(account: Account): NavLink[] {
+  if (account.isAdmin) return [DISCOVER, BRAND_HUB, STUDIO, PIPELINE, ADMIN];
+  if (account.role === "brand") return [DISCOVER, BRAND_HUB, PIPELINE];
+  if (account.role === "creator") return [DISCOVER, CREATOR_PORTAL, STUDIO];
+  return [DISCOVER, BRAND_HUB, STUDIO, PIPELINE];
+}
 
 const SIDEBAR_TOOLS: NavLink[] = [
   { href: "/brand?tab=create-brief", label: "New Brief", icon: "chatPlus" },
@@ -40,16 +50,12 @@ function useBriefHistory(): BriefStub[] {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setStubs(parsed.slice(0, 6) as BriefStub[]);
           return;
         }
       }
     } catch { /* ignore */ }
-    // Demo stubs
-    setStubs([
-      { id: "brief-sneaker-01", label: "Sneaker Reel (9:16)", status: "active" },
-      { id: "brief-apparel-02", label: "Apparel Film (16:9)", status: "active" },
-    ]);
   }, []);
   return stubs;
 }
@@ -72,8 +78,9 @@ function TopNav({
   onMenuToggle: () => void;
 }) {
   const pathname = usePathname();
-  const { user, signOutUser } = useAuth();
+  const { user, account, signOutUser } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const TOP_LINKS = topLinksFor(account);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close user menu on outside click
@@ -130,7 +137,6 @@ function TopNav({
       {/* Right: actions + avatar */}
       <div className="ml-auto flex items-center gap-1.5">
         <IconButton icon="search" tone="glass" size={34} label="Search" href="/discover" />
-        <IconButton icon="bell" tone="glass" size={34} label="Notifications" badge={2} onClick={() => {}} />
         <IconButton icon="settings" tone="glass" size={34} label="Settings" href="/me" className="hidden sm:flex" />
 
         {/* Avatar / user menu */}
@@ -151,22 +157,51 @@ function TopNav({
               <div className="px-4 py-3">
                 <p className="text-[12px] font-semibold text-white truncate">{user?.displayName || "Guest"}</p>
                 <p className="text-[11px] text-white/50 truncate">{user?.email ?? "Not signed in"}</p>
+                {user && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Badge tone="dark">{account.isAdmin ? "Admin" : account.role ? (account.role === "brand" ? "Brand" : "Creator") : "No role yet"}</Badge>
+                    {account.role && !account.isAdmin && <VerificationBadge status={account.status} />}
+                  </div>
+                )}
               </div>
               <div className="border-t border-white/8 py-1">
-                <Link
-                  href="/me"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
-                >
-                  <Icon name="user" size={13} /> Account
-                </Link>
-                <Link
-                  href="/creator-studio"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
-                >
-                  <Icon name="film" size={13} /> Creator Studio
-                </Link>
+                {user ? (
+                  <>
+                    <Link
+                      href="/me"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
+                    >
+                      <Icon name="user" size={13} /> Account
+                    </Link>
+                    {account.role && !account.isAdmin && (
+                      <Link
+                        href={account.role === "brand" ? "/brand/verification" : "/creator/verification"}
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
+                      >
+                        <Icon name="shield" size={13} /> Verification
+                      </Link>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/brand/signup"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
+                    >
+                      <Icon name="briefcase" size={13} /> Sign up as a Brand
+                    </Link>
+                    <Link
+                      href="/creator/signup"
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-[12px] text-white/75 hover:bg-white/8 hover:text-white"
+                    >
+                      <Icon name="film" size={13} /> Sign up as a Creator
+                    </Link>
+                  </>
+                )}
               </div>
               <div className="border-t border-white/8 py-1">
                 {user ? (
@@ -299,14 +334,34 @@ export function AppShell({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { account } = useAuth();
 
   // Close sidebar on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSidebarOpen(false);
   }, [pathname]);
 
+  // Portal guard (UX only — firestore.rules enforce access on the server).
+  const area = portalForPath(pathname);
+  const decision = account.ready ? decideRoute(pathname, account.principal, account.status) : { allow: true as const };
+  const mustPickRole = account.needsRoleSetup && area !== "public" && !pathname.endsWith("/signup");
+  const redirectTo = mustPickRole
+    ? "/choose-role?setup=1"
+    : area === "admin" && account.adminNeedsMfa
+    ? "/me"
+    : !decision.allow
+    ? decision.redirectTo
+    : null;
+  const blocked = area !== "public" && (!account.ready || redirectTo !== null);
+
+  useEffect(() => {
+    if (redirectTo) router.replace(redirectTo);
+  }, [redirectTo, router]);
+
   return (
-    <div className="min-h-screen bg-ink text-body">
+    <div className="min-h-screen bg-ink text-white/85">
       <TopNav sidebarOpen={sidebarOpen} onMenuToggle={() => setSidebarOpen((p) => !p)} />
 
       {!noSidebar && (
@@ -320,7 +375,7 @@ export function AppShell({
           !noSidebar && "md:ml-64"
         )}
       >
-        {children}
+        {blocked ? <PortalLoading label={redirectTo ? "Redirecting…" : undefined} /> : children}
       </main>
     </div>
   );

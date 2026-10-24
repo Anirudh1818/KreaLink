@@ -1,15 +1,57 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useStoredTheme } from "@/lib/use-theme";
 import { AppShell } from "@/components/AppShell";
 import { NetworkCanvas } from "@/components/NetworkCanvas";
+import { Button, Notice } from "@/components/ui/kit";
+import { useAuth } from "@/lib/auth-context";
+import { completeRoleSetup, friendlyAuthError } from "@/lib/auth/accountActions";
+import type { MemberRole } from "@/lib/auth/policy";
+
+/** One-time role choice for signed-in accounts that predate roles. */
+function RoleSetup() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function choose(role: MemberRole) {
+    if (!window.confirm(`Register this account as a ${role}? This can't be changed later.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await completeRoleSetup(role);
+      router.replace(role === "brand" ? "/brand/verification" : "/creator/verification");
+    } catch (err) {
+      setError(friendlyAuthError(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="kl-card relative z-10 mx-auto mt-10 max-w-xl space-y-4 p-6 text-left text-strong">
+      <h2 className="text-[17px] font-bold">Finish setting up your account</h2>
+      <p className="text-[13px] text-muted">
+        Choose how you&apos;ll use KreaLink. Each account holds one role — use a separate account if you need both.
+      </p>
+      {error && <Notice tone="danger">{error}</Notice>}
+      <div className="flex flex-wrap gap-3">
+        <Button variant="forest" icon="briefcase" disabled={busy} onClick={() => choose("brand")}>I&apos;m a Brand</Button>
+        <Button variant="light" icon="film" disabled={busy} onClick={() => choose("creator")}>I&apos;m a Creator</Button>
+      </div>
+    </div>
+  );
+}
 
 export default function ChooseRolePage() {
   const { theme } = useStoredTheme();
+  const { account } = useAuth();
 
   return (
     <AppShell>
+      {account.needsRoleSetup && <RoleSetup />}
       {/* 3D Network Canvas Background */}
       <NetworkCanvas />
 
@@ -39,7 +81,7 @@ export default function ChooseRolePage() {
         <div className="mt-14 grid gap-8 md:grid-cols-2 text-left">
           {/* Creator Path */}
           <Link
-            href="/join-creator"
+            href="/creator/signup"
             className="group relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-white/10 bg-[#0c0d12]/80 p-8 sm:p-10 backdrop-blur-xl transition-all duration-300 hover:border-amber-500/50 hover:bg-[#111219]/90 hover:shadow-2xl hover:shadow-amber-500/10 hover:-translate-y-1"
           >
             <div
@@ -84,7 +126,7 @@ export default function ChooseRolePage() {
 
           {/* Brand Path */}
           <Link
-            href="/brand"
+            href="/brand/signup"
             className="group relative flex flex-col justify-between overflow-hidden rounded-[2rem] border border-white/10 bg-[#0c0d12]/80 p-8 sm:p-10 backdrop-blur-xl transition-all duration-300 hover:border-cyan-500/50 hover:bg-[#111219]/90 hover:shadow-2xl hover:shadow-cyan-500/10 hover:-translate-y-1"
           >
             <div

@@ -7,6 +7,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -23,6 +25,7 @@ import {
 } from "@/lib/types";
 import { DEMO_CREATORS } from "@/lib/demoData";
 import { ActiveEngagements, useActiveEngagementCount } from "./ActiveEngagements";
+import { PortalAccessBanner } from "@/components/auth/AccountUI";
 
 type StudioTab = "overview" | "current-projects" | "engagements" | "portfolio" | "skills" | "earnings";
 
@@ -41,8 +44,8 @@ export default function CreatorStudioPage() {
   const activeEngagementCount = useActiveEngagementCount(creatorProfile.username);
 
   // Deliverable Submission State
-  const [deliverableAssetUrl, setDeliverableAssetUrl] = useState("/reels/reel-01.mp4");
-  const [deliverableNotes, setDeliverableNotes] = useState("v2 concept: Updated lighting and warmer color tone for the background.");
+  const [deliverableAssetUrl, setDeliverableAssetUrl] = useState("");
+  const [deliverableNotes, setDeliverableNotes] = useState("");
   const [isCheckingDelivery, setIsCheckingDelivery] = useState(false);
   const [deliveryCheckDone, setDeliveryCheckDone] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,35 +57,88 @@ export default function CreatorStudioPage() {
   // 1. Load creator document, portfolio, and invitations
   useEffect(() => {
     async function loadCreatorData() {
-      let targetUser = "paultrillo";
-      if (typeof window !== "undefined") {
-        const urlParams = new URLSearchParams(window.location.search);
-        const creatorQuery = urlParams.get("creator");
-        if (urlParams.get("tab") === "engagements") setActiveTab("engagements");
-        const localStored =
-          localStorage.getItem("krealink-current-creator") ||
-          localStorage.getItem("fanstreak-current-creator");
-        if (creatorQuery) targetUser = creatorQuery;
-        else if (localStored) targetUser = localStored;
-      }
-
       try {
-        const creatorRef = doc(db, "creators", targetUser);
-        const creatorSnap = await getDoc(creatorRef);
-
-        if (creatorSnap.exists()) {
-          setCreatorProfile(creatorSnap.data() as CreatorProfile);
-        } else {
-          const found = DEMO_CREATORS.find((c) => c.creator.username.toLowerCase() === targetUser.toLowerCase());
-          if (found) {
-            setCreatorProfile(found.creator);
-            setPortfolioItems(found.portfolio);
+        let targetUser = "";
+      if (user?.uid) {
+        try {
+          const q = query(collection(db, "creators"), where("ownerUid", "==", user.uid));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const cDoc = snap.docs[0];
+            setCreatorProfile(cDoc.data() as CreatorProfile);
+            targetUser = cDoc.id;
+          } else {
+            const uDoc = await getDoc(doc(db, "users", user.uid)).catch(() => null);
+            const uData = uDoc?.data();
+            const vDoc = await getDoc(doc(db, "verifications", user.uid)).catch(() => null);
+            const vApp = vDoc?.data()?.application;
+            const name = uData?.displayName || user.displayName || user.email?.split("@")[0] || "Creator";
+            const username = uData?.creatorUsername || name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+            const fallbackProfile: CreatorProfile = {
+              ownerUid: user.uid,
+              name,
+              username,
+              bio: vApp?.bio || "AI Content Creator",
+              specialization: vApp?.specializations?.[0] || "AI Creator",
+              skills: vApp?.specializations || ["Generative Video"],
+              aiTools: vApp?.aiTools || ["Runway", "Midjourney"],
+              aiModels: ["Claude", "GPT-4o"],
+              contentTypes: vApp?.formats || ["Short-form Video (9:16)"],
+              formats: vApp?.formats || ["9:16"],
+              commercialUse: vApp?.offersCommercialLicense ?? true,
+              availability: vApp?.availability === "open" ? "Open to Work" : "Limited Availability",
+              profilePhoto: user.photoURL || "",
+              verified: vDoc?.data()?.status === "verified",
+              verification: {
+                tools: true,
+                workflow: true,
+                portfolio: true,
+              },
+              status: "Active",
+              theme: "flame",
+            };
+            setCreatorProfile(fallbackProfile);
+            targetUser = username;
           }
+          setPortfolioItems([]);
+        } catch {
+          // continue
         }
+      } else {
+        targetUser = "paultrillo";
+        if (typeof window !== "undefined") {
+          const urlParams = new URLSearchParams(window.location.search);
+          const creatorQuery = urlParams.get("creator");
+          if (urlParams.get("tab") === "engagements") setActiveTab("engagements");
+          const localStored =
+            localStorage.getItem("krealink-current-creator") ||
+            localStorage.getItem("fanstreak-current-creator");
+          if (creatorQuery) targetUser = creatorQuery;
+          else if (localStored) targetUser = localStored;
+        }
+
+        try {
+          const creatorRef = doc(db, "creators", targetUser);
+          const creatorSnap = await getDoc(creatorRef);
+
+          if (creatorSnap.exists()) {
+            setCreatorProfile(creatorSnap.data() as CreatorProfile);
+          } else {
+            const found = DEMO_CREATORS.find((c) => c.creator.username.toLowerCase() === targetUser.toLowerCase());
+            if (found) {
+              setCreatorProfile(found.creator);
+              setPortfolioItems(found.portfolio);
+            }
+          }
+        } catch {
+          // continue
+        }
+      }
 
         // Load Invitations
         try {
-          const invSnap = await getDocs(collection(db, "invitations"));
+          if (!user?.uid) throw new Error("anonymous demo session");
+          const invSnap = await getDocs(query(collection(db, "invitations"), where("creatorOwnerUid", "==", user.uid)));
           if (!invSnap.empty) {
             setInvitations(invSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Invitation) })));
           } else if (typeof window !== "undefined") {
@@ -98,7 +154,8 @@ export default function CreatorStudioPage() {
 
         // Load Engagements
         try {
-          const engSnap = await getDocs(collection(db, "engagements"));
+          if (!user?.uid) throw new Error("anonymous demo session");
+          const engSnap = await getDocs(query(collection(db, "engagements"), where("creatorOwnerUid", "==", user.uid)));
           if (!engSnap.empty) {
             setEngagements(engSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Engagement) })));
           } else if (typeof window !== "undefined") {
@@ -210,22 +267,26 @@ export default function CreatorStudioPage() {
             </p>
           </div>
 
-          {/* Persona Switcher Dropdown */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-emerald-300">Demo Persona:</span>
-            <select
-              value={creatorProfile.username}
-              onChange={(e) => handleSwitchDemoPersona(e.target.value)}
-              className="rounded-xl border border-white/20 bg-black/40 px-3 py-1.5 text-xs font-bold text-white outline-none cursor-pointer"
-            >
-              {DEMO_CREATORS.map((c) => (
-                <option key={c.creator.username} value={c.creator.username} className="bg-[#0c1017] text-white">
-                  {c.creator.name} ({c.creator.specialization.slice(0, 24)})
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Persona Switcher Dropdown (demo presentation only) */}
+          {!user && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-emerald-300">Demo Persona:</span>
+              <select
+                value={creatorProfile.username}
+                onChange={(e) => handleSwitchDemoPersona(e.target.value)}
+                className="rounded-xl border border-white/20 bg-black/40 px-3 py-1.5 text-xs font-bold text-white outline-none cursor-pointer"
+              >
+                {DEMO_CREATORS.map((c) => (
+                  <option key={c.creator.username} value={c.creator.username} className="bg-[#0c1017] text-white">
+                    {c.creator.name} ({c.creator.specialization.slice(0, 24)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+
+        <PortalAccessBanner role="creator" />
 
         {/* Studio Navigation Tabs */}
         <div className="flex items-center gap-3 border-b border-white/[0.08] pb-1 text-xs font-semibold">

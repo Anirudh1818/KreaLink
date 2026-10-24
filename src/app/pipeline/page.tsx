@@ -342,9 +342,6 @@ function PipelineView() {
         {/* ── Header ── */}
         <div className="rounded-2xl bg-gradient-to-br from-[#0d2a1c] via-[#0a1f16] to-[#050606] border border-lime-500/20 p-6 flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-1 min-w-0">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-lime-400/10 border border-lime-400/20 text-lime-400 text-[10px] font-bold uppercase tracking-widest mb-2">
-              Round 2 Features
-            </div>
             <h1 className="text-2xl font-extrabold text-white">Campaign Pipeline</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/50">
               <select

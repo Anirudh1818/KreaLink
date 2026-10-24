@@ -14,12 +14,7 @@ function Hero() {
       <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-lime-500/10 blur-[80px]" />
 
       <div className="relative mx-auto max-w-3xl text-center">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/[0.07] px-4 py-1.5 text-[12px] font-semibold text-white/80 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.10)]">
-          <Icon name="sparkles" size={13} className="text-lime-400" />
-          Hackathon Round 2 — Generative AI Creator Marketplace
-        </div>
-
-        <h1 className="mt-4 text-4xl font-bold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-6xl">
+        <h1 className="text-4xl font-bold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-6xl">
           Match the right AI creator.
           <br />
           <span className="bg-gradient-to-r from-lime-400 to-forest-300 bg-clip-text text-transparent">
@@ -116,28 +111,24 @@ const FEATURES: FeatureCardProps[] = [
     icon: "📋",
     title: "Revision Tracking",
     body: "Feedback tied to a specific version, creator response with new upload, full history of who requested what and when, per-round status.",
-    badge: "Round 2",
     href: "/creator-studio",
   },
   {
     icon: "⚖️",
     title: "Licensing Compliance",
     body: "Brand requirements (usage, territory, duration, platforms, exclusivity) matched against what each creator offers. Mismatches flagged before selection.",
-    badge: "Round 2",
     href: "/discover",
   },
   {
     icon: "🤖",
     title: "Auto-Shortlist Agent",
     body: "Paste your brief. The agent ranks the full creator catalog, explains every pick, and proposes a shortlist the brand can accept, edit or reject.",
-    badge: "Bonus",
     href: "/brand?tab=create-brief",
   },
   {
     icon: "✅",
     title: "Delivery Check",
     body: "Format, aspect ratio, duration and resolution verified from real video metadata. A 16:9 upload against a 9:16 brief is flagged with a fix instruction.",
-    badge: "Bonus",
     href: "/creator-studio",
   },
 ];
@@ -165,17 +156,6 @@ export default function HomePage() {
         {/* Features */}
         <section className="bg-panel px-5 py-16">
           <div className="mx-auto max-w-6xl">
-            <div className="mb-10 text-center">
-              <Badge tone="green" icon="sparkles" className="mb-3">
-                Platform capabilities
-              </Badge>
-              <h2 className="text-[28px] font-bold text-strong">
-                Everything the Round 2 brief requires
-              </h2>
-              <p className="mt-2 text-[14px] text-muted">
-                Plus both bonus features — auto-shortlist agent and delivery check.
-              </p>
-            </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map((f) => (
                 <FeatureCard key={f.title} {...f} />

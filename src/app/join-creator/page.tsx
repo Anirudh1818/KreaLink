@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useStoredTheme } from "@/lib/use-theme";
 import { useAuth } from "@/lib/auth-context";
@@ -201,7 +201,9 @@ function cleanUsername(value: string) {
 
 export default function JoinCreatorPage() {
   const router = useRouter();
-  const { user, setLocalUser } = useAuth();
+  const { user, account } = useAuth();
+  // Only a signed-in creator account may publish a profile to Firestore.
+  const canPublish = !!user && account.role === "creator";
   const { activeTheme } = useStoredTheme();
 
   // Multi-Step State: 1 = Identity, 2 = AI Stack, 3 = Deliverables, 4 = Commercial Terms
@@ -374,15 +376,8 @@ export default function JoinCreatorPage() {
       return;
     }
 
-    let currentUserUid = user?.uid;
-    if (!currentUserUid) {
-      currentUserUid = `creator-${finalUsername}-${Math.random().toString(36).substring(2, 6)}`;
-      setLocalUser({
-        uid: currentUserUid,
-        email: finalEmail,
-        displayName: finalName,
-      });
-    }
+    // No fabricated identities: anonymous visitors get a local demo profile only.
+    const currentUserUid = canPublish ? user!.uid : null;
 
     try {
       setIsCreating(true);
@@ -427,12 +422,7 @@ export default function JoinCreatorPage() {
           youtube: youtube.trim(),
           x: xLink.trim(),
         },
-        verified: (existingData?.verified as boolean) ?? true,
-        verification: (existingData?.verification as { tools?: boolean; workflow?: boolean; portfolio?: boolean }) ?? {
-          tools: true,
-          workflow: Boolean(workflow.trim()),
-          portfolio: true,
-        },
+        // Verification badges are set only by admin review, never by the profile form.
         status: (existingData?.status as string) ?? "Active",
         theme: activeTheme,
         createdFrom: "join_creator_page",
@@ -440,9 +430,15 @@ export default function JoinCreatorPage() {
         updatedAt: serverTimestamp(),
       };
 
-      try {
+      if (currentUserUid) try {
         const creatorRef = doc(db, "creators", finalUsername);
-        await setDoc(creatorRef, creatorDocData, { merge: true });
+        const batch = writeBatch(db);
+        batch.set(creatorRef, creatorDocData, { merge: true });
+        // Link the public profile to the account (rules allow this once, for the owner).
+        if (!account.userDoc?.creatorUsername) {
+          batch.update(doc(db, "users", currentUserUid), { creatorUsername: finalUsername, updatedAt: serverTimestamp() });
+        }
+        await batch.commit();
 
         // Seed initial portfolio showcase item
         const initialProject = {
@@ -489,7 +485,11 @@ export default function JoinCreatorPage() {
         }
       }
 
-      setMessage("AI Creator profile created and listed on Discover Talent! Launching Creator Studio...");
+      setMessage(
+        canPublish
+          ? "Profile published. It shows as unverified until our team reviews your verification application. Launching Creator Studio..."
+          : "Demo profile saved on this device only. Sign up as a creator to publish it. Launching Creator Studio..."
+      );
 
       setTimeout(() => {
         router.push(`/creator-studio?creator=${finalUsername}`);

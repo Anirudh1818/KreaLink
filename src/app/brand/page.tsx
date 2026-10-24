@@ -8,6 +8,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -43,6 +45,8 @@ import {
   type LicenseTerm,
 } from "@/lib/r2";
 import { useR2Revision } from "@/lib/r2/useR2";
+import { canPerform } from "@/lib/auth/policy";
+import { PortalAccessBanner, RestrictedNotice } from "@/components/auth/AccountUI";
 
 type BrandTab = "briefs" | "create-brief" | "matches" | "engagements" | "pipeline" | "profile";
 
@@ -50,7 +54,7 @@ const BRAND_TABS: { key: BrandTab; label: string }[] = [
   { key: "briefs", label: "Briefs" },
   { key: "matches", label: "Matches" },
   { key: "engagements", label: "Engagements" },
-  { key: "pipeline", label: "Pipeline (R2)" },
+  { key: "pipeline", label: "Pipeline" },
 ];
 
 const LICENSE_FIELDS: { key: keyof LicenseTerm; label: string }[] = [
@@ -77,7 +81,11 @@ function formatLicenseValue(v: LicenseTerm[keyof LicenseTerm]): string {
 }
 
 export default function BrandDashboardPage() {
-  const { user } = useAuth();
+  const { user, account } = useAuth();
+  // Signed-in brands must be verified to invite; anonymous visitors use the local demo.
+  const inviteAccess = user
+    ? canPerform("brand.sendInvitation", { signedIn: true, emailVerified: account.emailVerified, role: account.role, status: account.status })
+    : ({ allowed: true } as const);
 
   const [activeTab, setActiveTab] = useState<BrandTab>(() => {
     if (typeof window !== "undefined") {
@@ -148,7 +156,7 @@ export default function BrandDashboardPage() {
       const promptParam = urlParams.get("prompt");
       if (promptParam) return promptParam;
     }
-    return "Create a premium skincare launch video for Instagram with natural lighting and modern aesthetic";
+    return "";
   });
 
   // AI Brief Builder Lifecycle State
@@ -174,17 +182,16 @@ export default function BrandDashboardPage() {
 
   // Editable Form for Creative Brief
   const [briefForm, setBriefForm] = useState({
-    campaignName: "GlowCo Skincare Launch Campaign",
-    requirements:
-      "High-quality AI generated content for our new vitamin C Serum launch across Instagram and TikTok. Premium, natural, clean, modern aesthetic.",
+    campaignName: "",
+    requirements: "",
     contentType: "Short-form Video (Reels/TikTok)",
-    styleString: "Premium, natural, clean, modern",
+    styleString: "",
     platform: "Instagram, TikTok",
     aspectRatio: "9:16 Vertical (Reels/Shorts)",
-    targetAudience: "Gen Z & Millennials seeking organic skincare",
-    deliverablesString: "1 x 15s Video, 3 x Images",
+    targetAudience: "",
+    deliverablesString: "1 x 15s Video",
     commercialUse: true,
-    notes: "Paid social, website, 6 months, India, non-exclusive",
+    notes: "",
   });
   const [isSavingBrief, setIsSavingBrief] = useState(false);
 
@@ -194,9 +201,7 @@ export default function BrandDashboardPage() {
 
   // Feedback thread state in Screen 3
   const [feedbackComment, setFeedbackComment] = useState("");
-  const [commentsList, setCommentsList] = useState<string[]>([
-    "The lighting looks great! Can we make the text slightly bigger and try a warmer tone in the background?",
-  ]);
+  const [commentsList, setCommentsList] = useState<string[]>([]);
 
   // Invite Creator Modal
   const [invitingCreator, setInvitingCreator] = useState<CreatorProfile | null>(null);
@@ -218,11 +223,33 @@ export default function BrandDashboardPage() {
           if (myBrandSnap.exists()) {
             const b = myBrandSnap.data() as unknown as BrandProfile;
             setBrand({ ...b, id: myBrandSnap.id });
+          } else if (user?.uid) {
+            const vSnap = await getDoc(doc(db, "verifications", user.uid)).catch(() => null);
+            const vApp = vSnap?.data()?.application;
+            setBrand({
+              id: brandId,
+              ownerUid: user.uid,
+              name: vApp?.tradeName || vApp?.legalName || user.displayName || user.email?.split("@")[0] || "My Brand",
+              industry: vApp?.businessType || "Brand Workspace",
+              description: vApp?.website ? `Website: ${vApp.website}` : "",
+              contactEmail: user.email || undefined,
+            });
           } else {
-            setBrand({ ...DEMO_BRAND, id: brandId, ownerUid: user?.uid || DEMO_BRAND.ownerUid });
+            setBrand({ ...DEMO_BRAND, id: brandId, ownerUid: DEMO_BRAND.ownerUid });
           }
         } catch {
-          setBrand({ ...DEMO_BRAND, id: brandId, ownerUid: user?.uid || DEMO_BRAND.ownerUid });
+          if (user?.uid) {
+            setBrand({
+              id: brandId,
+              ownerUid: user.uid,
+              name: user.displayName || "My Brand",
+              industry: "Brand Workspace",
+              description: "",
+              contactEmail: user.email || undefined,
+            });
+          } else {
+            setBrand({ ...DEMO_BRAND, id: brandId, ownerUid: DEMO_BRAND.ownerUid });
+          }
         }
 
         // Load Creators from Demo Roster + Firestore + Local Cache
@@ -283,16 +310,30 @@ export default function BrandDashboardPage() {
         setCreators(Array.from(creatorMap.values()));
 
         // Load Briefs
-        const briefsSnap = await getDocs(collection(db, "briefs"));
         let loadedBriefs: CreativeBrief[] = [];
-        if (!briefsSnap.empty) {
-          loadedBriefs = briefsSnap.docs.map((b) => ({
-            id: b.id,
-            ...(b.data() as unknown as CreativeBrief),
-          }));
-        }
-        if (loadedBriefs.length === 0) {
-          loadedBriefs = DEMO_BRIEFS;
+        try {
+          if (user?.uid) {
+            const briefsSnap = await getDocs(query(collection(db, "briefs"), where("ownerUid", "==", user.uid)));
+            if (!briefsSnap.empty) {
+              loadedBriefs = briefsSnap.docs.map((b) => ({
+                id: b.id,
+                ...(b.data() as unknown as CreativeBrief),
+              }));
+            }
+          } else {
+            const briefsSnap = await getDocs(collection(db, "briefs"));
+            if (!briefsSnap.empty) {
+              loadedBriefs = briefsSnap.docs.map((b) => ({
+                id: b.id,
+                ...(b.data() as unknown as CreativeBrief),
+              }));
+            }
+            if (loadedBriefs.length === 0) {
+              loadedBriefs = DEMO_BRIEFS;
+            }
+          }
+        } catch {
+          // continue
         }
         setBriefs(loadedBriefs);
         if (loadedBriefs.length > 0) {
@@ -301,7 +342,8 @@ export default function BrandDashboardPage() {
 
         // Load Invitations
         try {
-          const invSnap = await getDocs(collection(db, "invitations"));
+          if (!user?.uid) throw new Error("anonymous demo session");
+          const invSnap = await getDocs(query(collection(db, "invitations"), where("brandOwnerUid", "==", user.uid)));
           if (!invSnap.empty) {
             setInvitations(invSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Invitation) })));
           } else if (typeof window !== "undefined") {
@@ -319,7 +361,8 @@ export default function BrandDashboardPage() {
 
         // Load Engagements
         try {
-          const engSnap = await getDocs(collection(db, "engagements"));
+          if (!user?.uid) throw new Error("anonymous demo session");
+          const engSnap = await getDocs(query(collection(db, "engagements"), where("brandOwnerUid", "==", user.uid)));
           if (!engSnap.empty) {
             setEngagements(engSnap.docs.map((d) => ({ id: d.id, ...(d.data() as unknown as Engagement) })));
           } else if (typeof window !== "undefined") {
@@ -483,6 +526,10 @@ export default function BrandDashboardPage() {
   // Handle Send Invitation
   async function handleSendInvitation() {
     if (!invitingCreator) return;
+    if (!inviteAccess.allowed) {
+      setInviteFeedback(inviteAccess.reason);
+      return;
+    }
     setIsSendingInvite(true);
     setInviteFeedback("");
 
@@ -495,6 +542,7 @@ export default function BrandDashboardPage() {
         brandId: brand.id,
         brandName: brand.name,
         creatorUsername: invitingCreator.username,
+        creatorOwnerUid: invitingCreator.ownerUid,
         briefId: selectedBrief?.id,
         campaignTitle: selectedBrief?.campaignName || "GlowCo Skincare Launch Campaign",
         contentType: selectedBrief?.contentType || "Short-form Video",
@@ -673,6 +721,11 @@ export default function BrandDashboardPage() {
         </nav>
       </div>
 
+      {/* Verification status / demo notice */}
+      <div className="max-w-7xl mx-auto mb-5">
+        <PortalAccessBanner role="brand" />
+      </div>
+
       {/* ======================================================== */}
       {/* SCREEN 1: BRAND DASHBOARD & AI BRIEF BUILDER */}
       {/* ======================================================== */}
@@ -682,7 +735,7 @@ export default function BrandDashboardPage() {
           <div className="rounded-2xl bg-gradient-to-r from-[#0a352c] via-[#0d4036] to-[#082923] p-6 text-white border border-emerald-500/25 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-5">
             <div>
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                Welcome back, {brand.name || "GlowCo"}!
+                {user ? `Welcome back, ${user.displayName || brand.name}!` : `Demo workspace · ${brand.name || "GlowCo"}`}
               </h1>
               <p className="mt-1 text-xs md:text-sm text-emerald-200/80">
                 Create, collaborate and bring your ideas to life with AI creators.
@@ -1999,6 +2052,14 @@ export default function BrandDashboardPage() {
               />
             </div>
 
+            <RestrictedNotice decision={inviteAccess} href="/brand/verification" />
+            {!user && (
+              <p className="text-[11px] text-slate-500">
+                Demo mode: this invitation is saved on this device only.{" "}
+                <Link href="/brand/signup" className="font-semibold underline">Create a brand account</Link> to send real invitations.
+              </p>
+            )}
+
             {inviteFeedback && (
               <p className="text-xs font-bold text-emerald-600">{inviteFeedback}</p>
             )}
@@ -2014,8 +2075,8 @@ export default function BrandDashboardPage() {
               <button
                 type="button"
                 onClick={handleSendInvitation}
-                disabled={isSendingInvite}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md"
+                disabled={isSendingInvite || !inviteAccess.allowed}
+                className="disabled:opacity-50 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md"
               >
                 {isSendingInvite ? "Sending..." : "Dispatch Invitation →"}
               </button>
